@@ -29,6 +29,9 @@ from meshgraphnets import cloth_eval
 from meshgraphnets import cloth_model
 from meshgraphnets import core_model
 from meshgraphnets import dataset
+from meshgraphnets import normalization, common
+
+from torchsummary import summary
 
 
 FLAGS = flags.FLAGS
@@ -52,59 +55,65 @@ PARAMETERS = {
                   size=3, batch=1, model=cloth_model, evaluator=cloth_eval)
 }
 
+output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
 
-def learner(model, params):
-  """Run a learner job."""
+def learner(params):
+  # handles dataset preprocessing, model definition, training process definition and model training
+
+  # dataset preprocessing
+  # batch size can be defined in load_dataset. Default to 1.
   add_targets = dataset.add_targets([params['field']], add_history=params['history'])
   split_and_preprocess = dataset.split_and_preprocess(noise_field=params['field'],
                                     noise_scale=params['noise'],
                                     noise_gamma=params['gamma'])
-  # batch size can be defined in load_dataset. Default to 1.
   batch_size = 1
   ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', add_targets=add_targets, split_and_preprocess=split_and_preprocess, batch_size=batch_size)
   
-  '''
-  lr = tf.train.exponential_decay(learning_rate=1e-4,
-                                  global_step=global_step,
-                                  decay_steps=int(5e6),
-                                  decay_rate=0.1) + 1e-6
-  optimizer = tf.train.AdamOptimizer(learning_rate=lr)
-  '''
-  # print(model)
-  optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+  # model definition
+  # dataset will be passed to model, and some specific size of the dataset will be calculated inside model
+  # then networks will be initialized
+  trajectory_state_for_init = next(iter(ds_loader))
+  model = params['model'].Model(trajectory_state_for_init, params)
+
+  # training process definition 
+  optimizer = torch.optim.Adam(model.learned_model.parameters(recurse=True), lr=1e-4)
   optimizer = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.1 + 1e-6, last_epoch=-1)
 
-  # train_op = optimizer.minimize(loss_op, global_step=global_step)
-  # Don't train for the first few steps, just accumulate normalization stats
-  '''
-  train_op = tf.cond(tf.less(global_step, 1000),
-                     lambda: tf.group(tf.assign_add(global_step, 1)),
-                     lambda: tf.group(train_op))
+  # model training
+  is_training = True
+  batches_in_dataset = 1000 / batch_size
+  for epoch in range(FLAGS.num_training_steps / batches_in_dataset):
+      # every time when model.train is called, model will train itself with the whole dataset
+      print("Epoch", epoch)
+      for batch in range(batches_in_dataset):
+        print("    training with batch", batch)
+        network_output = model(batch, is_training)
+        optimizer.zero_grad()
+        loss = torch.nn.MSELoss(target(batch), network_output)
+        # loss_mask = torch.equal(input['node_type'][:, 0], common.NodeType.NORMAL)
+        loss.backward()
+        optimizer.step()
+
+def target(self, inputs):
+    """L2 loss on position."""
+    # build target acceleration
+    cur_position = inputs['world_pos']
+    prev_position = inputs['prev|world_pos']
+    target_position = inputs['target|world_pos']
+    target_acceleration = target_position - 2*cur_position + prev_position
+    target_normalized = self._output_normalizer(target_acceleration)
+    '''
+    # build loss
+    loss_mask = torch.equal(inputs['node_type'][:, 0], common.NodeType.NORMAL)
+    error = torch.sum((target_normalized - network_output)**2, dim=1)
+    loss = torch.mean(error[loss_mask])
+    return loss
+    '''
+    return target_normalized
+
+
   
-  with tf.train.MonitoredTrainingSession(
-      hooks=[tf.train.StopAtStepHook(last_step=FLAGS.num_training_steps)],
-      checkpoint_dir=FLAGS.checkpoint_dir,
-      save_checkpoint_secs=600) as sess:
-
-    while not sess.should_stop():
-      _, step, loss = sess.run([train_op, global_step, loss_op])
-      if step % 1000 == 0:
-        logging.info('Step %d: Loss %g', step, loss)
-    logging.info('Training complete.')
-  '''
-  # The code below defines the training process
-  for epoch in range(FLAGS.num_training_steps / 1000):
-    # in each epoch, save checkpoint file after training
-    for index, input in enumerate(ds_loader):
-      # train
-      loss_op = model.train(input, optimizer)
-    optimizer.step()
-
-    
-
-
-  
-
+'''
 def evaluator(model, params):
   """Run a model rollout trajectory."""
   ds = dataset.load_dataset(FLAGS.dataset_dir, FLAGS.rollout_split)
@@ -128,24 +137,23 @@ def evaluator(model, params):
       logging.info('%s: %g', key, np.mean([x[key] for x in scalars]))
     with open(FLAGS.rollout_path, 'wb') as fp:
       pickle.dump(trajectories, fp)
-
+'''
 
 def main(argv):
   del argv
-  # tf.enable_resource_variables()
-  # tf.disable_eager_execution()
   params = PARAMETERS[FLAGS.model]
+  '''
   learned_model = core_model.EncodeProcessDecode(
       output_size=params['size'],
       latent_size=128,
       num_layers=2,
       message_passing_steps=15)
-  print("print learned model", learned_model)
-  model = params['model'].Model(learned_model)
+  '''
   if FLAGS.mode == 'train':
-    learner(model, params)
+    learner(params)
   elif FLAGS.mode == 'eval':
-    evaluator(model, params)
+    # evaluator(params)
+    pass
 
 if __name__ == '__main__':
   app.run(main)

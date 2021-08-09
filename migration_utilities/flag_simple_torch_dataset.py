@@ -42,7 +42,7 @@ class FlagSimpleDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.dataset[idx]
-        item = {}
+        trajectory = {}
         # decode bytes into corresponding dtypes
         for key, value in sample.items():
             raw_data = value.numpy().tobytes()
@@ -60,13 +60,15 @@ class FlagSimpleDataset(Dataset):
             '''
             elif self.types[key] != 'dynamic':
                 raise ValueError('invalid data format')
-            if self.add_targets is not None:
-                reshaped_data = self.add_targets(reshaped_data)
-            if self.split_and_preprocess is not None:
-                reshaped_data = self.split_and_preprocess(reshaped_data)
-            item[key] = reshaped_data
+            trajectory[key] = reshaped_data
         
-        return item
+        if self.add_targets is not None:
+            trajectory = self.add_targets(trajectory)
+        if self.split_and_preprocess is not None:
+            trajectory = self.split_and_preprocess(trajectory)
+        
+        
+        return trajectory
 
 # code to check whether custom dataset work as expected
 
@@ -74,28 +76,32 @@ class FlagSimpleDataset(Dataset):
 '''
 import time
 start_time = time.time()
-
-num_workers = 6
-batch_size = 64
+'''
+'''
+num_workers = 1
+batch_size = 2
 flag_simple_dataset = DataLoader(FlagSimpleDataset(path='../../../mgn_dataset/flag_simple/', split='train'), batch_size=batch_size, num_workers=num_workers)
 print('flag_simple_dataset size is ' + str(sum(1 for e in flag_simple_dataset)))
 for example1_key, example1_value in next(iter(flag_simple_dataset)).items():
     print("example1_key is: ", example1_key)
-    # print("example1_key size is: ", example1_key.size())
-    print("example1_value is: ", example1_value)
     print("example1_value size is: ", example1_value.size())
-    
+'''
+    # print("example1_key size is: ", example1_key.size())
+    # print("example1_value is: ", example1_value)
+'''
     for example2 in example1:
         print("example2 is: ", example2)
         for key, value in example2.items():
             print(str(key) + ": " + str(value))
             print()
-    
-
+'''
+'''
 for key, value in next(iter(flag_simple_dataset)).items():
     print(str(key) + ": " + str(value))
     print()
 '''
+'''
 
 # print("Execution time for flag simple dataset: ", time.time() - start_time)
+'''
 

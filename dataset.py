@@ -18,6 +18,8 @@
 
 import sys
 import os
+
+from numpy.lib.function_base import i0
 cwd = os.getcwd()
 sys.path.append(cwd + "/meshgraphnets/migration_utilities/")
 
@@ -32,15 +34,12 @@ from torch.utils.data import DataLoader
 
 from meshgraphnets.common import NodeType
 
-# this function returns a torch dataloader
-def load_dataset(path, split, add_targets=None, split_and_preprocess=None, batch_size=1):
-  # DataLoader(FlagSimpleDataset(path='../../../mgn_dataset/flag_simple/', split='train'), batch_size=1)
-  return DataLoader(FlagSimpleDataset(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, shuffle=True, prefetch_factor=10, num_workers=10)
-
 def add_targets(fields, add_history):
   """Adds target and optionally history fields to dataframe."""
   def fn(trajectory):
     out = {}
+    # print("printing trajectory size:")
+    # print(trajectory)
     for key, val in trajectory.items():
       out[key] = val[1:-1]
       if key in fields:
@@ -50,12 +49,17 @@ def add_targets(fields, add_history):
     return out
   return fn
 
-
 def split_and_preprocess(noise_field, noise_scale, noise_gamma):
   """Splits trajectories into frames, and adds training noise."""
   def add_noise(frame):
-    noise = torch.normal(torch.zeros(frame[noise_field].size(), dtype=torch.float32),
-                             stddev=noise_scale)
+    # print("frame")
+    # print(frame)
+    print("noise field")
+    print(noise_field)
+    # print("frame[noise_field].size()")
+    # print(frame[noise_field].size())
+    zero_size = torch.zeros(frame[noise_field].size(), dtype=torch.float32)
+    noise = torch.normal(zero_size, stddev=noise_scale)
     # don't apply noise to boundary nodes
     mask = torch.equal(frame['node_type'], NodeType.NORMAL)[:, 0]
     noise = torch.where(mask, noise, torch.zeros_like(noise))
@@ -70,11 +74,34 @@ def split_and_preprocess(noise_field, noise_scale, noise_gamma):
 
   return ds.prefetch(10)
   '''
-  def element_operation(example):
-    example = torch.flatten(example, start_dim=1)
-    example = add_noise(example)
+  def element_operation(trajectory):
+    # print("--------------trajectory world pos----------")
+    # print(trajectory['world_pos'].size())
+    world_pos = trajectory['world_pos']
+    mesh_pos = trajectory['mesh_pos']
+    node_type = trajectory['node_type']
+    cells = trajectory['cells']
+    target_world_pos = trajectory['target|world_pos']
+    prev_world_pos = trajectory['prev|world_pos']
+    split_trajectory = []
+    for i in range(399):
+      wp = add_noise(world_pos[i])
+      mp = add_noise(mesh_pos[i])
+      twp = add_noise(target_world_pos[i])
+      nt = add_noise(node_type[i])
+      c= add_noise(cells[i])
+      pwp = add_noise(prev_world_pos[i])
+      split_trajectory.append(wp, mp, twp, nt, c, pwp)
+    # example = torch.flatten(frames, start_dim=-2)
+    # example = add_noise(example)
+    return torch.tensor(split_trajectory)
   
   return element_operation
+
+# this function returns a torch dataloader
+def load_dataset(path, split, add_targets=None, split_and_preprocess=None, batch_size=1):
+  # DataLoader(FlagSimpleDataset(path='../../../mgn_dataset/flag_simple/', split='train'), batch_size=1)
+  return DataLoader(FlagSimpleDataset(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, shuffle=True, prefetch_factor=10, num_workers=10)
 
 def batch_dataset(ds, batch_size):
   """Batches input datasets."""

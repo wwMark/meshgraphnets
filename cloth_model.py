@@ -19,47 +19,44 @@
 # import sonnet as snt
 # import tensorflow.compat.v1 as tf
 import torch
+from torch import nn as nn
 from torch.nn import Module
 from torch.nn.functional import one_hot
 
 from meshgraphnets import common
-from meshgraphnets import core_model
+# from meshgraphnets import core_model
 from meshgraphnets import normalization
+from meshgraphnets.migration_utilities.encode_process_decode import EncodeProcessDecode
 
 
-class Model(Module):
+class Model(nn.Module):
   """Model for static cloth simulation."""
-
-  def __init__(self, learned_model, name='Model'):
+  def __init__(self, trajectory_state, params, name='Model'):
     super(Model, self).__init__()
-    self._learned_model = learned_model
-    # all normalizer will be bypassed and they return their input
+    self._params = params
     self._output_normalizer = normalization.Normalizer(
         size=3, name='output_normalizer')
     self._node_normalizer = normalization.Normalizer(
         size=3+common.NodeType.SIZE, name='node_normalizer')
     self._edge_normalizer = normalization.Normalizer(
         size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
-      
+
+    graph = self._build_graph(trajectory_state)
+    self.learned_model = core_model.EncodeProcessDecode(
+        output_size=self.params['size'],
+        latent_size=128,
+        num_layers=2,
+        message_passing_steps=15,
+        graph=graph)
 
   def _build_graph(self, inputs, is_training):
     """Builds input graph."""
-    print('in build graph')
     # construct graph nodes
     velocity = inputs['world_pos'] - inputs['prev|world_pos']
     # node_type = tf.one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE)
     node_type = one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE)
     node_features = torch.cat([velocity, node_type], axis=-1)
 
-    '''
-    print('velocity in build graph: ' + str(velocity))
-    print('type of velocity in build graph: ' + str(type(velocity)))
-    print('node type in build graph: ' + str(node_type))
-    print('type of node type in build graph: ' + str(type(node_type)))  
-    print('shape of node type in build graph: ' + str(tf.shape(node_type)))
-    print('node features in build graph: ' + str(node_features))
-    print('shape of node features in build graph: ' + str(tf.shape(node_features)))
-    '''
     # construct graph edges
     senders, receivers = common.triangles_to_edges(inputs['cells'])
     relative_world_pos = (torch.gather(inputs['world_pos'], senders) -
@@ -81,9 +78,9 @@ class Model(Module):
         node_features=self._node_normalizer(node_features, is_training),
         edge_sets=[mesh_edges])
 
-  def forward(self, inputs):
+  def forward(self, inputs, is_training):
     # print('in cloth model build')
-    graph = self._build_graph(inputs, is_training=False)
+    graph = self._build_graph(inputs, is_training=is_training)
     # show graph
     '''
     print('type of graph: ' + type(graph))
@@ -91,16 +88,30 @@ class Model(Module):
     print('type of graph.edge_sets: ' + type(graph.edge_sets))
     quit()
     '''
-    per_node_network_output = self._learned_model(graph)
-    return self._update(inputs, per_node_network_output)
+    network_output = self.learned_model(graph)
+    if is_training:
+      # build target acceleration
+      cur_position = inputs['world_pos']
+      prev_position = inputs['prev|world_pos']
+      target_position = inputs['target|world_pos']
+      target_acceleration = target_position - 2*cur_position + prev_position
+      target_normalized = self._output_normalizer(target_acceleration)
 
-  # @snt.reuse_variables
+      # build loss
+      loss_mask = torch.equal(inputs['node_type'][:, 0], common.NodeType.NORMAL)
+      error = torch.sum((target_normalized - network_output)**2, dim=1)
+      loss = torch.mean(error[loss_mask])
+      return loss
+    else:
+      return self._update(inputs, network_output)
+  
+  '''
   def loss(self, inputs):
     """L2 loss on position."""
     print('in loss')
     graph = self._build_graph(inputs, is_training=True)
     print('in loss, after build graph')
-    network_output = self._learned_model(graph)
+    network_output = self.learned_model(graph)
 
     # build target acceleration
     cur_position = inputs['world_pos']
@@ -114,22 +125,32 @@ class Model(Module):
     error = torch.sum((target_normalized - network_output)**2, dim=1)
     loss = torch.mean(error[loss_mask])
     return loss
+  '''
+  '''
+  def train(self, optimizer):
+    for index, input in enumerate(self._ds_loader):
+      # build target acceleration
+      cur_position = input['world_pos']
+      prev_position = input['prev|world_pos']
+      target_position = input['target|world_pos']
+      target_acceleration = target_position - 2*cur_position + prev_position
+      target_normalized = self._output_normalizer(target_acceleration)
 
-  def train(self, input, optimizer):
-    # build target acceleration
-    cur_position = input['world_pos']
-    prev_position = input['prev|world_pos']
-    target_position = input['target|world_pos']
-    target_acceleration = target_position - 2*cur_position + prev_position
-    target_normalized = self._output_normalizer(target_acceleration)
-
-    # build loss
-    graph = self._build_graph(input, is_training=True)
-    network_output = self._learned_model(graph)
-    optimizer.zero_grad()
-    loss = torch.nn.MSELoss(target_normalized, network_output)
-    # loss_mask = torch.equal(input['node_type'][:, 0], common.NodeType.NORMAL)
-    loss.backward()
+      # build loss
+      graph = self._build_graph(input, is_training=True)
+      if self.learned_model is None:
+        self.learned_model = core_model.EncodeProcessDecode(
+        output_size=self.params['size'],
+        latent_size=128,
+        num_layers=2,
+        message_passing_steps=15,
+        graph=graph)
+      network_output = self.learned_model(graph)
+      optimizer.zero_grad()
+      loss = torch.nn.MSELoss(target_normalized, network_output)
+      # loss_mask = torch.equal(input['node_type'][:, 0], common.NodeType.NORMAL)
+      loss.backward()
+  '''
 
   def _update(self, inputs, per_node_network_output):
     """Integrate model outputs."""
