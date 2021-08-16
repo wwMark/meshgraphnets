@@ -53,15 +53,21 @@ def split_and_preprocess(noise_field, noise_scale, noise_gamma):
   """Splits trajectories into frames, and adds training noise."""
   def add_noise(frame):
     # print("frame")
-    # print(frame)
-    print("noise field")
-    print(noise_field)
+    # print(frame.keys())
+    # print("noise field")
+    # print(noise_field)
     # print("frame[noise_field].size()")
     # print(frame[noise_field].size())
     zero_size = torch.zeros(frame[noise_field].size(), dtype=torch.float32)
-    noise = torch.normal(zero_size, stddev=noise_scale)
+    noise = torch.normal(zero_size, std=noise_scale)
+    # print("noise shape", noise.shape)
     # don't apply noise to boundary nodes
-    mask = torch.equal(frame['node_type'], NodeType.NORMAL)[:, 0]
+    # print("type of node type", type(NodeType.NORMAL.value))
+    other = torch.Tensor([NodeType.NORMAL.value])
+    # print("type of temp", type(temp.int()))
+    mask = torch.eq(frame['node_type'], other.int())[:, 0]
+    mask = torch.stack((mask, mask, mask), dim=1)
+    # print("mask shape", mask.shape)
     noise = torch.where(mask, noise, torch.zeros_like(noise))
     frame[noise_field] += noise
     frame['target|'+noise_field] += (1.0 - noise_gamma) * noise
@@ -83,25 +89,37 @@ def split_and_preprocess(noise_field, noise_scale, noise_gamma):
     cells = trajectory['cells']
     target_world_pos = trajectory['target|world_pos']
     prev_world_pos = trajectory['prev|world_pos']
-    split_trajectory = []
+    trajectory_steps = []
     for i in range(399):
-      wp = add_noise(world_pos[i])
+      wp = world_pos[i]
+      mp = mesh_pos[i]
+      twp = target_world_pos[i]
+      nt = node_type[i]
+      c= cells[i]
+      pwp = prev_world_pos[i]
+      trajectory_step = {'world_pos': wp, 'mesh_pos': mp, 'node_type': nt, 'cells': c,
+                         'target|world_pos': twp, 'prev|world_pos': pwp}
+      noisy_trajectory_step = add_noise(trajectory_step)
+      trajectory_steps.append(noisy_trajectory_step)
+      '''
+      wp = world_pos[i])
       mp = add_noise(mesh_pos[i])
       twp = add_noise(target_world_pos[i])
       nt = add_noise(node_type[i])
       c= add_noise(cells[i])
       pwp = add_noise(prev_world_pos[i])
       split_trajectory.append(wp, mp, twp, nt, c, pwp)
+      '''
     # example = torch.flatten(frames, start_dim=-2)
     # example = add_noise(example)
-    return torch.tensor(split_trajectory)
+    return trajectory_steps
   
   return element_operation
 
 # this function returns a torch dataloader
 def load_dataset(path, split, add_targets=None, split_and_preprocess=None, batch_size=1):
   # DataLoader(FlagSimpleDataset(path='../../../mgn_dataset/flag_simple/', split='train'), batch_size=1)
-  return DataLoader(FlagSimpleDataset(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, shuffle=True, prefetch_factor=10, num_workers=10)
+  return DataLoader(FlagSimpleDataset(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, shuffle=True, num_workers=0)
 
 def batch_dataset(ds, batch_size):
   """Batches input datasets."""

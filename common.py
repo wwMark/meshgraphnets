@@ -17,7 +17,8 @@
 """Commonly used data structures and functions."""
 
 import enum
-import tensorflow.compat.v1 as tf
+# import tensorflow.compat.v1 as tf
+import torch
 
 
 class NodeType(enum.IntEnum):
@@ -34,18 +35,40 @@ class NodeType(enum.IntEnum):
 def triangles_to_edges(faces):
   """Computes mesh edges from triangles."""
   # collect edges from triangles
-  edges = tf.concat([faces[:, 0:2],
+  '''
+  print("shape of faces", faces.shape)
+  print("0-2", faces[:, 0:2])
+  print("1-3", faces[:, 1:3])
+  '''
+  edges = torch.cat((faces[:, 0:2],
                      faces[:, 1:3],
-                     tf.stack([faces[:, 2], faces[:, 0]], axis=1)], axis=0)
+                     torch.stack((faces[:, 2], faces[:, 0]), dim=1)), dim=0)
   # those edges are sometimes duplicated (within the mesh) and sometimes
   # single (at the mesh boundary).
   # sort & pack edges as single tf.int64
-  receivers = tf.reduce_min(edges, axis=1)
-  senders = tf.reduce_max(edges, axis=1)
-  packed_edges = tf.bitcast(tf.stack([senders, receivers], axis=1), tf.int64)
+  receivers, _ = torch.min(edges, dim=1)
+  senders, _ = torch.max(edges, dim=1)
+  '''
+  print("receivers shape", receivers.shape)
+  print("senders shape", senders.shape)
+  '''
+  '''
+  packed_edges = torch.stack((senders, receivers), dim=1)
+  print("packed_edges", packed_edges)
+  packed_edges = packed_edges.to(torch.int64)
+  print("packed_edges after conversion", packed_edges)
   # remove duplicates and unpack
-  unique_edges = tf.bitcast(tf.unique(packed_edges)[0], tf.int32)
-  senders, receivers = tf.unstack(unique_edges, axis=1)
+  unique_edges = torch.unique(packed_edges, return_inverse=False, return_counts=False)
+  print("unique_edges", unique_edges)
+  unique_edges = unique_edges.to(torch.int32)
+  print("unique_edges after conversion", unique_edges)
+  senders, receivers = torch.unbind(unique_edges, dim=1)
+  '''
+  receivers = torch.unique(receivers)
+  senders = torch.unique(senders)
   # create two-way connectivity
-  return (tf.concat([senders, receivers], axis=0),
-          tf.concat([receivers, senders], axis=0))
+  se = torch.cat((senders, receivers), axis=0)
+  se = se.to(torch.int64)
+  re = torch.cat((receivers, senders), axis=0)
+  re = re.to(torch.int64)
+  return (se, re)

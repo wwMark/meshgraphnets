@@ -67,7 +67,7 @@ class FlagSimpleDataset(Dataset):
         if self.split_and_preprocess is not None:
             trajectory = self.split_and_preprocess(trajectory)
         
-        
+        # print("trajectory type in flag_dataset", type(trajectory))
         return trajectory
 
 # code to check whether custom dataset work as expected

@@ -27,9 +27,10 @@ from meshgraphnets import cfd_eval
 from meshgraphnets import cfd_model
 from meshgraphnets import cloth_eval
 from meshgraphnets import cloth_model
-from meshgraphnets import core_model
+# from meshgraphnets import core_model
 from meshgraphnets import dataset
 from meshgraphnets import normalization, common
+from meshgraphnets.test import encode_process_decode
 
 from torchsummary import summary
 
@@ -72,36 +73,44 @@ def learner(params):
   # model definition
   # dataset will be passed to model, and some specific size of the dataset will be calculated inside model
   # then networks will be initialized
-  trajectory_state_for_init = next(iter(ds_loader))
+  '''
+  print("type of ds loader", type(ds_loader))
+  print("ds loader iter", iter(ds_loader))
+  print("type of ds loader iter next", type(next(iter(ds_loader))))
+  '''
+  trajectory_state_for_init = next(iter(ds_loader))[0]
   model = params['model'].Model(trajectory_state_for_init, params)
 
   # training process definition 
   optimizer = torch.optim.Adam(model.learned_model.parameters(recurse=True), lr=1e-4)
-  optimizer = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.1 + 1e-6, last_epoch=-1)
+  scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.1 + 1e-6, last_epoch=-1)
 
   # model training
   is_training = True
-  batches_in_dataset = 1000 / batch_size
-  for epoch in range(FLAGS.num_training_steps / batches_in_dataset):
+  ds_iterator = iter(ds_loader)
+  batches_in_dataset = 1000 // batch_size
+  for epoch in range(FLAGS.num_training_steps // batches_in_dataset):
       # every time when model.train is called, model will train itself with the whole dataset
       print("Epoch", epoch)
-      for batch in range(batches_in_dataset):
-        print("    training with batch", batch)
-        network_output = model(batch, is_training)
-        optimizer.zero_grad()
-        loss = torch.nn.MSELoss(target(batch), network_output)
-        # loss_mask = torch.equal(input['node_type'][:, 0], common.NodeType.NORMAL)
-        loss.backward()
-        optimizer.step()
+      for batch_index in range(batches_in_dataset):
+        data = next(ds_iterator)
+        for data_frame in data:
+          network_output = model(data_frame, is_training)
+          optimizer.zero_grad()
+          loss = torch.nn.MSELoss()(target(inputs=data_frame), network_output)
+          # loss_mask = torch.equal(input['node_type'][:, 0], common.NodeType.NORMAL)
+          loss.backward()
+          optimizer.step()
+        scheduler.step()
 
-def target(self, inputs):
+def target(inputs):
     """L2 loss on position."""
     # build target acceleration
     cur_position = inputs['world_pos']
     prev_position = inputs['prev|world_pos']
     target_position = inputs['target|world_pos']
     target_acceleration = target_position - 2*cur_position + prev_position
-    target_normalized = self._output_normalizer(target_acceleration)
+    target_normalized = output_normalizer(target_acceleration)
     '''
     # build loss
     loss_mask = torch.equal(inputs['node_type'][:, 0], common.NodeType.NORMAL)

@@ -21,12 +21,13 @@
 import torch
 from torch import nn as nn
 from torch.nn import Module
-from torch.nn.functional import one_hot
+import torch.nn.functional as F
+# from torch.nn.functional import one_hot
 
 from meshgraphnets import common
 # from meshgraphnets import core_model
 from meshgraphnets import normalization
-from meshgraphnets.migration_utilities.encode_process_decode import EncodeProcessDecode
+from meshgraphnets.test import encode_process_decode
 
 
 class Model(nn.Module):
@@ -41,9 +42,10 @@ class Model(nn.Module):
     self._edge_normalizer = normalization.Normalizer(
         size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
-    graph = self._build_graph(trajectory_state)
-    self.learned_model = core_model.EncodeProcessDecode(
-        output_size=self.params['size'],
+    is_training = False
+    graph = self._build_graph(trajectory_state, is_training=is_training)
+    self.learned_model = encode_process_decode.EncodeProcessDecode(
+        output_size=self._params['size'],
         latent_size=128,
         num_layers=2,
         message_passing_steps=15,
@@ -52,29 +54,51 @@ class Model(nn.Module):
   def _build_graph(self, inputs, is_training):
     """Builds input graph."""
     # construct graph nodes
+    # print("type of inputs", type(inputs))
+    # print("inputs", inputs)
     velocity = inputs['world_pos'] - inputs['prev|world_pos']
     # node_type = tf.one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE)
-    node_type = one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE)
-    node_features = torch.cat([velocity, node_type], axis=-1)
+    # print("inputs node_type", inputs['node_type'][:, :, 0])
+    # quit()
+    node_type = F.one_hot(inputs['node_type'][:, :, 0][0].to(torch.int64), common.NodeType.SIZE)
+    '''
+    print("shape velocity", velocity.shape)
+    print("shape node_type", node_type.shape)
+    quit()
+    '''
+    velocity = torch.squeeze(velocity)
+    node_features = torch.cat((velocity, node_type), dim=-1)
 
     # construct graph edges
-    senders, receivers = common.triangles_to_edges(inputs['cells'])
-    relative_world_pos = (torch.gather(inputs['world_pos'], senders) -
-                          torch.gather(inputs['world_pos'], receivers))
-    relative_mesh_pos = (torch.gather(inputs['mesh_pos'], senders) -
-                         torch.gather(inputs['mesh_pos'], receivers))
-    edge_features = torch.cat([
+    '''
+    print("shape of cells", inputs['cells'].shape)
+    quit()
+    '''
+    senders, receivers = common.triangles_to_edges(torch.squeeze(inputs['cells']))
+    '''
+    print("input shape", inputs['world_pos'].shape)
+    print("index shape", senders.shape)
+    print("max senders", torch.max(senders))
+    print("max receivers", torch.max(receivers))
+    '''
+    world_pos = torch.squeeze(inputs['world_pos'])
+    mesh_pos = torch.squeeze(inputs['mesh_pos'])
+    relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
+                          torch.index_select(input=world_pos, dim=0, index=receivers))
+    relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                         torch.index_select(mesh_pos, 0, receivers))
+    edge_features = torch.cat((
         relative_world_pos,
-        torch.norm(relative_world_pos, dim=-1, keepdims=True),
+        torch.norm(relative_world_pos, dim=-1, keepdim=True),
         relative_mesh_pos,
-        torch.norm(relative_mesh_pos, dim=-1, keepdims=True)], axis=-1)
+        torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
 
-    mesh_edges = core_model.EdgeSet(
+    mesh_edges = encode_process_decode.EdgeSet(
         name='mesh_edges',
         features=self._edge_normalizer(edge_features, is_training),
         receivers=receivers,
         senders=senders)
-    return core_model.MultiGraph(
+    return encode_process_decode.MultiGraph(
         node_features=self._node_normalizer(node_features, is_training),
         edge_sets=[mesh_edges])
 
@@ -98,7 +122,7 @@ class Model(nn.Module):
       target_normalized = self._output_normalizer(target_acceleration)
 
       # build loss
-      loss_mask = torch.equal(inputs['node_type'][:, 0], common.NodeType.NORMAL)
+      loss_mask = torch.equal(inputs['node_type'][:, 0], torch.Tensor([common.NodeType.NORMAL.value]).int())
       error = torch.sum((target_normalized - network_output)**2, dim=1)
       loss = torch.mean(error[loss_mask])
       return loss
