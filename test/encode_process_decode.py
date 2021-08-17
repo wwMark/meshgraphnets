@@ -21,14 +21,16 @@ from collections import OrderedDict
 import functools
 # from typing import OrderedDict
 import torch
-from torch import nn
+from torch import nn as nn
 from torch.nn import LazyLinear, Sequential, LayerNorm, Module
 
-from torchsummary import summary
+# from torchsummary import summary
 
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])
 MultiGraph = collections.namedtuple('Graph', ['node_features', 'edge_sets'])
+
+cuda0 = torch.device('cuda:0')
 
 class LazyMLP(nn.Module):
   def __init__(self, output_sizes):
@@ -40,8 +42,12 @@ class LazyMLP(nn.Module):
 
   def forward(self, input):
     # print("-------------")
-    # print("LazyMLP input.shape", input.shape)
+    # print("1. LazyMLP input is cuda", input.is_cuda)
+    input = input.cuda(cuda0)
+    # print("2. LazyMLP input is cuda", input.is_cuda)
+    # print("1. MLP is cuda", next(self.layers.parameters()).is_cuda)
     y = self.layers(input)
+    # print("2. MLP is cuda", next(self.layers.parameters()).is_cuda)
     # print("LazyMLP self.layers", self.layers)
     # print("-------------")
     return y
@@ -59,14 +65,18 @@ class GraphNetBlock(nn.Module):
 
   def __init__(self, model_fn, output_size, name='GraphNetBlock'):
     super().__init__()
-    self._edge_model = model_fn(output_size)
-    self._node_model = model_fn(output_size)
+    self._edge_model = model_fn(output_size).cuda()
+    self._node_model = model_fn(output_size).cuda()
 
   def _update_edge_features(self, node_features, edge_set):
     """Aggregrates node features, and applies edge function."""
     # print("GNP in update edge features......")
-    sender_features = torch.index_select(input=node_features, dim=0, index=edge_set.senders)
-    receiver_features = torch.index_select(input=node_features, dim=0, index=edge_set.receivers)
+    # print("GNP update edge features node_features is cuda", node_features.is_cuda)
+    # print("GNP update edge features edge_set.senders is cuda", edge_set.senders.is_cuda)
+    senders = edge_set.senders.cuda()
+    receivers = edge_set.receivers.cuda()
+    sender_features = torch.index_select(input=node_features, dim=0, index=senders)
+    receiver_features = torch.index_select(input=node_features, dim=0, index=receivers)
     features = [sender_features, receiver_features, edge_set.features]
     features = torch.cat(features, axis=-1)
     # print("GNP features shape after update edge", features.shape)
@@ -84,9 +94,11 @@ class GraphNetBlock(nn.Module):
     for edge_set in edge_sets:
       # print("edge_set.receivers", edge_set.receivers.shape)
       # print("edge_set.features", edge_set.features.shape)
-      add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1])
+      add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1]).cuda()
       for index, feature_tensor in enumerate(edge_set.features):
         des_index = edge_set.receivers[index]
+        # print("GNP update node features node_features is cuda", node_features.is_cuda)
+        # print("GNP update node features edge_set.senders is cuda", edge_set.senders.is_cuda)
         add_intermediate[des_index].add(feature_tensor)
       features.append(add_intermediate)
       '''
@@ -119,21 +131,40 @@ class GraphNetBlock(nn.Module):
 
 class Encoder(nn.Module):
     """Encodes node and edge features into latent features."""
-    def __init__(self, graph, make_mlp, latent_size):
+    def __init__(self, make_mlp, latent_size):
       super().__init__()
-      self.node_model = make_mlp(latent_size)
-      self.edge_models = []
+      self._make_mlp = make_mlp
+      self._latent_size = latent_size
+      self.node_model = self._make_mlp(latent_size)
+      self.edge_models = nn.ModuleList()
+      '''
       for _ in graph.edge_sets:
         edge_model = make_mlp(latent_size)
         self.edge_models.append(edge_model)
+      '''
 
     def forward(self, graph):
       node_latents = self.node_model(graph.node_features)
       new_edges_sets = []
-      for edge_set, edge_model in zip(graph.edge_sets, self.edge_models):
-        latent = edge_model(edge_set.features)
+
+      for index, edge_set in enumerate(graph.edge_sets):
+        try:
+          edge_model = self.edge_models[index]
+        except IndexError:
+          edge_model = self._make_mlp(self._latent_size)
+          self.edge_models.append(edge_model)
+        feature_cuda = edge_set.features.cuda()
+        latent = edge_model(feature_cuda)
         new_edges_sets.append(edge_set._replace(features=latent))
       return MultiGraph(node_latents, new_edges_sets)
+
+      '''
+      for edge_set, edge_model in zip(graph.edge_sets, self.edge_models):
+        feature_cuda = edge_set.features.cuda()
+        latent = edge_model(feature_cuda)
+        new_edges_sets.append(edge_set._replace(features=latent))
+      return MultiGraph(node_latents, new_edges_sets)
+      '''
 
 class Decoder(nn.Module):
   """Decodes node features from graph."""
@@ -154,7 +185,7 @@ class Processor(nn.Module):
     self._submodules_ordered_dict = OrderedDict()
     for index in range(message_passing_steps):
       self._submodules_ordered_dict[str(index)] = GraphNetBlock(model_fn=make_mlp, output_size=output_size)
-    self._submodules = nn.Sequential(self._submodules_ordered_dict)
+    self._submodules = nn.Sequential(self._submodules_ordered_dict).cuda()
 
   def forward(self, graph):
     # print("Processor----------------")
@@ -167,15 +198,13 @@ class EncodeProcessDecode(nn.Module):
                output_size,
                latent_size,
                num_layers,
-               message_passing_steps,
-               graph):
+               message_passing_steps):
     super().__init__()
     self._latent_size = latent_size
     self._output_size = output_size
     self._num_layers = num_layers
     self._message_passing_steps = message_passing_steps
-    self._graph = graph
-    self._encoder = Encoder(graph=graph, make_mlp=self._make_mlp, latent_size=self._latent_size)
+    self._encoder = Encoder(make_mlp=self._make_mlp, latent_size=self._latent_size)
     self._processor = Processor(make_mlp=self._make_mlp, output_size=self._latent_size, message_passing_steps=self._message_passing_steps)
     self._decoder = Decoder(make_mlp=functools.partial(self._make_mlp, layer_norm=False), output_size=self._output_size)
 
@@ -184,11 +213,12 @@ class EncodeProcessDecode(nn.Module):
       widths = [self._latent_size] * self._num_layers + [output_size]
       network = LazyMLP(widths)
       if layer_norm:
-        network = nn.Sequential(network, nn.LayerNorm(normalized_shape=widths[-1]))
+        network = nn.Sequential(network, nn.LayerNorm(normalized_shape=widths[-1])).cuda()
       return network
 
   def forward(self, graph):
     """Encodes and processes a multigraph, and returns node features."""
+    # print("encoder is cuda", next(self._encoder.parameters()).is_cuda)
     latent_graph = self._encoder(graph)
     # print("EncodeProcessDecode input graph", graph)
     latent_graph = self._processor(latent_graph)

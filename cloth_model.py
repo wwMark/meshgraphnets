@@ -42,6 +42,13 @@ class Model(nn.Module):
     self._edge_normalizer = normalization.Normalizer(
         size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
+    self.learned_model = encode_process_decode.EncodeProcessDecode(
+                        output_size=self._params['size'],
+                        latent_size=128,
+                        num_layers=2,
+                        message_passing_steps=15)
+    
+    '''
     is_training = False
     graph = self._build_graph(trajectory_state, is_training=is_training)
     self.learned_model = encode_process_decode.EncodeProcessDecode(
@@ -50,6 +57,7 @@ class Model(nn.Module):
         num_layers=2,
         message_passing_steps=15,
         graph=graph)
+    '''
 
   def _build_graph(self, inputs, is_training):
     """Builds input graph."""
@@ -105,6 +113,15 @@ class Model(nn.Module):
   def forward(self, inputs, is_training):
     # print('in cloth model build')
     graph = self._build_graph(inputs, is_training=is_training)
+    '''
+    if self.learned_model is None:
+      self.learned_model = encode_process_decode.EncodeProcessDecode(
+        output_size=self._params['size'],
+        latent_size=128,
+        num_layers=2,
+        message_passing_steps=15,
+        graph=graph)
+    '''
     # show graph
     '''
     print('type of graph: ' + type(graph))
@@ -119,7 +136,7 @@ class Model(nn.Module):
       prev_position = inputs['prev|world_pos']
       target_position = inputs['target|world_pos']
       target_acceleration = target_position - 2*cur_position + prev_position
-      target_normalized = self._output_normalizer(target_acceleration)
+      target_normalized = self._output_normalizer(target_acceleration).cuda()
 
       # build loss
       loss_mask = torch.equal(inputs['node_type'][:, 0], torch.Tensor([common.NodeType.NORMAL.value]).int())

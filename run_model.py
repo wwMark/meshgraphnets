@@ -15,7 +15,7 @@
 # limitations under the License.
 # ============================================================================
 """Runs the learner/evaluator."""
-
+# python -m meshgraphnets.run_model --model=cloth --mode=train --checkpoint_dir="C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\tmp\checkpoint\" --num_training_steps=1000
 import pickle
 from absl import app
 from absl import flags
@@ -23,8 +23,8 @@ from absl import logging
 import numpy as np
 # import tensorflow.compat.v1 as tf
 import torch
-from meshgraphnets import cfd_eval
-from meshgraphnets import cfd_model
+# from meshgraphnets import cfd_eval
+# from meshgraphnets import cfd_model
 from meshgraphnets import cloth_eval
 from meshgraphnets import cloth_model
 # from meshgraphnets import core_model
@@ -32,7 +32,7 @@ from meshgraphnets import dataset
 from meshgraphnets import normalization, common
 from meshgraphnets.test import encode_process_decode
 
-from torchsummary import summary
+# from torchsummary import summary
 
 
 FLAGS = flags.FLAGS
@@ -41,7 +41,7 @@ flags.DEFINE_enum('mode', 'train', ['train', 'eval'],
 flags.DEFINE_enum('model', None, ['cfd', 'cloth'],
                   'Select model to run.')
 flags.DEFINE_string('checkpoint_dir', None, 'Directory to save checkpoint')
-flags.DEFINE_string('dataset_dir', None, 'Directory to load dataset from.')
+flags.DEFINE_string('dataset_dir', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\deepmind-research\\meshgraphnets\\data\\flag_simple\\', 'Directory to load dataset from.')
 flags.DEFINE_string('rollout_path', None,
                     'Pickle file to save eval trajectories')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
@@ -50,8 +50,8 @@ flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 flags.DEFINE_integer('num_training_steps', int(10e6), 'No. of training steps')
 
 PARAMETERS = {
-    'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
-                size=2, batch=2, model=cfd_model, evaluator=cfd_eval),
+    # 'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
+    #             size=2, batch=2, model=cfd_model, evaluator=cfd_eval),
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
                   size=3, batch=1, model=cloth_model, evaluator=cloth_eval)
 }
@@ -80,6 +80,7 @@ def learner(params):
   '''
   trajectory_state_for_init = next(iter(ds_loader))[0]
   model = params['model'].Model(trajectory_state_for_init, params)
+  model.cuda()
 
   # training process definition 
   optimizer = torch.optim.Adam(model.learned_model.parameters(recurse=True), lr=1e-4)
@@ -94,8 +95,10 @@ def learner(params):
       print("Epoch", epoch)
       for batch_index in range(batches_in_dataset):
         data = next(ds_iterator)
+        print("    Batch index is", batch_index)
         for data_frame in data:
           network_output = model(data_frame, is_training)
+          print("        Finished one frame.")
           optimizer.zero_grad()
           loss = torch.nn.MSELoss()(target(inputs=data_frame), network_output)
           # loss_mask = torch.equal(input['node_type'][:, 0], common.NodeType.NORMAL)
@@ -118,7 +121,7 @@ def target(inputs):
     loss = torch.mean(error[loss_mask])
     return loss
     '''
-    return target_normalized
+    return target_normalized.cuda()
 
 
   
