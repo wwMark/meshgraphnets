@@ -24,10 +24,10 @@ from torch.nn import Module
 import torch.nn.functional as F
 # from torch.nn.functional import one_hot
 
-from meshgraphnets import common
+import common
 # from meshgraphnets import core_model
-from meshgraphnets import normalization
-from meshgraphnets.test import encode_process_decode
+import normalization
+from test import encode_process_decode
 
 
 class Model(nn.Module):

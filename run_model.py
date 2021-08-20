@@ -25,12 +25,21 @@ import numpy as np
 import torch
 # from meshgraphnets import cfd_eval
 # from meshgraphnets import cfd_model
+'''
 from meshgraphnets import cloth_eval
 from meshgraphnets import cloth_model
 # from meshgraphnets import core_model
 from meshgraphnets import dataset
 from meshgraphnets import normalization, common
-from meshgraphnets.test import encode_process_decode
+'''
+# import cloth_eval
+import cloth_model
+# from meshgraphnets import core_model
+import dataset
+import normalization, common
+from test import encode_process_decode
+
+import time
 
 # from torchsummary import summary
 
@@ -38,7 +47,7 @@ from meshgraphnets.test import encode_process_decode
 FLAGS = flags.FLAGS
 flags.DEFINE_enum('mode', 'train', ['train', 'eval'],
                   'Train model, or run evaluation.')
-flags.DEFINE_enum('model', None, ['cfd', 'cloth'],
+flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
                   'Select model to run.')
 flags.DEFINE_string('checkpoint_dir', None, 'Directory to save checkpoint')
 flags.DEFINE_string('dataset_dir', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\deepmind-research\\meshgraphnets\\data\\flag_simple\\', 'Directory to load dataset from.')
@@ -47,13 +56,13 @@ flags.DEFINE_string('rollout_path', None,
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
-flags.DEFINE_integer('num_training_steps', int(10e6), 'No. of training steps')
+flags.DEFINE_integer('num_training_steps', int(10e2), 'No. of training steps')
 
 PARAMETERS = {
     # 'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
     #             size=2, batch=2, model=cfd_model, evaluator=cfd_eval),
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
-                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval)
+                  size=3, batch=1, model=cloth_model) # evaluator=cloth_eval)
 }
 
 output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
@@ -63,12 +72,15 @@ def learner(params):
 
   # dataset preprocessing
   # batch size can be defined in load_dataset. Default to 1.
+  '''
   add_targets = dataset.add_targets([params['field']], add_history=params['history'])
   split_and_preprocess = dataset.split_and_preprocess(noise_field=params['field'],
                                     noise_scale=params['noise'],
                                     noise_gamma=params['gamma'])
-  batch_size = 1
-  ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', add_targets=add_targets, split_and_preprocess=split_and_preprocess, batch_size=batch_size)
+  '''
+  batch_size = 2
+  ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', batch_size=batch_size)
+  # ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', add_targets=add_targets, split_and_preprocess=split_and_preprocess, batch_size=batch_size)
   
   # model definition
   # dataset will be passed to model, and some specific size of the dataset will be calculated inside model
@@ -90,21 +102,27 @@ def learner(params):
   is_training = True
   ds_iterator = iter(ds_loader)
   batches_in_dataset = 1000 // batch_size
+  total_epoch = FLAGS.num_training_steps // batches_in_dataset
   for epoch in range(FLAGS.num_training_steps // batches_in_dataset):
       # every time when model.train is called, model will train itself with the whole dataset
-      print("Epoch", epoch)
-      for batch_index in range(batches_in_dataset):
+      print("Epoch", epoch + 1, "/", total_epoch)
+      # for batch_index in range(batches_in_dataset):
+      for batch_index in [0]:
+        print("    Batch index", batch_index + 1, "/", batches_in_dataset)
         data = next(ds_iterator)
-        print("    Batch index is", batch_index)
-        for data_frame in data:
-          network_output = model(data_frame, is_training)
-          print("        Finished one frame.")
-          optimizer.zero_grad()
-          loss = torch.nn.MSELoss()(target(inputs=data_frame), network_output)
-          # loss_mask = torch.equal(input['node_type'][:, 0], common.NodeType.NORMAL)
-          loss.backward()
-          optimizer.step()
-        scheduler.step()
+        # print(len(data[0]))
+        # quit()
+        # data = torch.squeeze(data, dim=-1)
+        for trajectory in data:
+            for data_frame_index, data_frame in enumerate(trajectory):
+              network_output = model(data_frame, is_training)
+              print("        Finished", data_frame_index + 1, " frame.")
+              optimizer.zero_grad()
+              loss = torch.nn.MSELoss()(target(inputs=data_frame), network_output)
+              # loss_mask = torch.equal(input['node_type'][:, 0], common.NodeType.NORMAL)
+              loss.backward()
+              optimizer.step()
+            scheduler.step()
 
 def target(inputs):
     """L2 loss on position."""
@@ -153,6 +171,9 @@ def evaluator(model, params):
 
 def main(argv):
   del argv
+
+  start = time.time()
+
   params = PARAMETERS[FLAGS.model]
   '''
   learned_model = core_model.EncodeProcessDecode(
@@ -166,6 +187,9 @@ def main(argv):
   elif FLAGS.mode == 'eval':
     # evaluator(params)
     pass
+  
+  end = time.time()
+  print("Elapsed time", end - start)
 
 if __name__ == '__main__':
   app.run(main)

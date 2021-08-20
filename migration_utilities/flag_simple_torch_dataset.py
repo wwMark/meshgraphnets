@@ -8,12 +8,17 @@ from os import path
 import json
 import numpy as np
 
+
+from common import NodeType
+
 class FlagSimpleDataset(Dataset):
     def __init__(self, path, split, add_targets=None, split_and_preprocess=None):
         self.path = path
         self.split = split
+        '''
         self.add_targets = add_targets
         self.split_and_preprocess = split_and_preprocess
+        '''
         try:
             with open(os.path.join(path, 'meta.json'), 'r') as fp:
                 self.meta = json.loads(fp.read())
@@ -52,23 +57,76 @@ class FlagSimpleDataset(Dataset):
             if self.types[key] == 'static':
                 reshaped_data = torch.tile(reshaped_data, (self.meta['trajectory_length'], 1, 1))
             elif self.types[key] == 'dynamic_varlen':
-                # not used in cloth_model
-                '''
-                length = tf.io.decode_raw(features['length_'+key].values, tf.int32)
-                length = tf.reshape(length, [-1])
-                data = tf.RaggedTensor.from_row_lengths(data, row_lengths=length)
-            '''
+               pass
             elif self.types[key] != 'dynamic':
                 raise ValueError('invalid data format')
             trajectory[key] = reshaped_data
-        
+
+        '''
         if self.add_targets is not None:
             trajectory = self.add_targets(trajectory)
         if self.split_and_preprocess is not None:
             trajectory = self.split_and_preprocess(trajectory)
+        '''
+        trajectory = self.add_targets()(trajectory)
+        trajectory = self.split_and_preprocess()(trajectory)
         
         # print("trajectory type in flag_dataset", type(trajectory))
         return trajectory
+
+    def add_targets(self):
+        """Adds target and optionally history fields to dataframe."""
+        fields = 'world_pos'
+        add_history = True
+        def fn(trajectory):
+            out = {}
+            for key, val in trajectory.items():
+                out[key] = val[1:-1]
+                if key in fields:
+                    if add_history:
+                        out['prev|' + key] = val[0:-2]
+                    out['target|' + key] = val[2:]
+            return out
+
+        return fn
+
+    def split_and_preprocess(self):
+        """Splits trajectories into frames, and adds training noise."""
+        noise_field = 'world_pos'
+        noise_scale = 0.003
+        noise_gamma = 0.1
+        def add_noise(frame):
+            zero_size = torch.zeros(frame[noise_field].size(), dtype=torch.float32)
+            noise = torch.normal(zero_size, std=noise_scale)
+            other = torch.Tensor([NodeType.NORMAL.value])
+            mask = torch.eq(frame['node_type'], other.int())[:, 0]
+            mask = torch.stack((mask, mask, mask), dim=1)
+            noise = torch.where(mask, noise, torch.zeros_like(noise))
+            frame[noise_field] += noise
+            frame['target|' + noise_field] += (1.0 - noise_gamma) * noise
+            return frame
+
+        def element_operation(trajectory):
+            world_pos = trajectory['world_pos']
+            mesh_pos = trajectory['mesh_pos']
+            node_type = trajectory['node_type']
+            cells = trajectory['cells']
+            target_world_pos = trajectory['target|world_pos']
+            prev_world_pos = trajectory['prev|world_pos']
+            trajectory_steps = []
+            for i in range(399):
+                wp = world_pos[i]
+                mp = mesh_pos[i]
+                twp = target_world_pos[i]
+                nt = node_type[i]
+                c = cells[i]
+                pwp = prev_world_pos[i]
+                trajectory_step = {'world_pos': wp, 'mesh_pos': mp, 'node_type': nt, 'cells': c,
+                                   'target|world_pos': twp, 'prev|world_pos': pwp}
+                noisy_trajectory_step = add_noise(trajectory_step)
+                trajectory_steps.append(noisy_trajectory_step)
+            return trajectory_steps
+        return element_operation
 
 # code to check whether custom dataset work as expected
 
