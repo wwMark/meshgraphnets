@@ -11,6 +11,8 @@ import numpy as np
 
 from common import NodeType
 
+device = torch.device('cuda')
+
 class FlagSimpleDataset(Dataset):
     def __init__(self, path, split, add_targets=None, split_and_preprocess=None):
         self.path = path
@@ -52,7 +54,7 @@ class FlagSimpleDataset(Dataset):
         for key, value in sample.items():
             raw_data = value.numpy().tobytes()
             mature_data = np.frombuffer(raw_data, dtype=getattr(np, self.dtypes[key]))
-            mature_data = torch.from_numpy(mature_data)
+            mature_data = torch.from_numpy(mature_data).to(device)
             reshaped_data = torch.reshape(mature_data, self.shapes[key])
             if self.types[key] == 'static':
                 reshaped_data = torch.tile(reshaped_data, (self.meta['trajectory_length'], 1, 1))
@@ -96,9 +98,9 @@ class FlagSimpleDataset(Dataset):
         noise_scale = 0.003
         noise_gamma = 0.1
         def add_noise(frame):
-            zero_size = torch.zeros(frame[noise_field].size(), dtype=torch.float32)
-            noise = torch.normal(zero_size, std=noise_scale)
-            other = torch.Tensor([NodeType.NORMAL.value])
+            zero_size = torch.zeros(frame[noise_field].size(), dtype=torch.float32).to(device)
+            noise = torch.normal(zero_size, std=noise_scale).to(device)
+            other = torch.Tensor([NodeType.NORMAL.value]).to(device)
             mask = torch.eq(frame['node_type'], other.int())[:, 0]
             mask = torch.stack((mask, mask, mask), dim=1)
             noise = torch.where(mask, noise, torch.zeros_like(noise))

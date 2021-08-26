@@ -19,12 +19,9 @@
 import collections
 from collections import OrderedDict
 import functools
-# from typing import OrderedDict
 import torch
 from torch import nn as nn
-from torch.nn import LazyLinear, Sequential, LayerNorm, Module
-
-# from torchsummary import summary
+from torch import multiprocessing as mp
 
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])
@@ -67,6 +64,9 @@ class GraphNetBlock(nn.Module):
     super().__init__()
     self._edge_model = model_fn(output_size).cuda()
     self._node_model = model_fn(output_size).cuda()
+    # self._cpu_cores = mp.cpu_count()
+    self._cpu_cores = 4
+    self._update_node_features_thread_pool = mp.Pool(self._cpu_cores)
 
   def _update_edge_features(self, node_features, edge_set):
     """Aggregrates node features, and applies edge function."""
@@ -83,6 +83,12 @@ class GraphNetBlock(nn.Module):
     # with tf.variable_scope(edge_set.name+'_edge_fn'):
     return self._edge_model(features)
 
+  def _update_node_features_mp_helper(self, features, receivers, add_intermediate):
+    for index, feature_tensor in enumerate(features):
+      des_index = receivers[index]
+      add_intermediate[des_index].add(feature_tensor)
+    return add_intermediate
+
   def _update_node_features(self, node_features, edge_sets):
     """Aggregrates edge features, and applies node function."""
     # print("GNP in update node features......")
@@ -92,15 +98,28 @@ class GraphNetBlock(nn.Module):
     num_nodes = dim_to_be_got[0]
     features = [node_features]
     for edge_set in edge_sets:
-      # print("edge_set.receivers", edge_set.receivers.shape)
-      # print("edge_set.features", edge_set.features.shape)
-      add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1]).cuda()
+      # use multiprocessing to decrease execution time
+      payload_per_core = edge_set.features.shape[0] // self._cpu_cores
+      argument_list = []
+      for i in range(self._cpu_cores - 1):
+        i = i * payload_per_core
+        add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1]).to(device=cuda0)
+        argument_list.append((edge_set.features[i : i + payload_per_core, : ], edge_set.receivers[i : i + payload_per_core], add_intermediate))
+      i = (self._cpu_cores - 1) * payload_per_core
+      add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1]).to(device=cuda0)
+      argument_list.append((edge_set.features[i : , : ], edge_set.receivers[i : ], add_intermediate))
+      result_iterable = self._update_node_features_thread_pool.starmap(self._update_node_features_mp_helper, argument_list)
+      result = torch.zeros(num_nodes, edge_set.features.shape[1]).to(device=cuda0)
+      for add_intermediate in result_iterable:
+        result.add(add_intermediate)
+      features.append(result)
+      '''
+      add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1]).to(device=cuda0)
       for index, feature_tensor in enumerate(edge_set.features):
         des_index = edge_set.receivers[index]
-        # print("GNP update node features node_features is cuda", node_features.is_cuda)
-        # print("GNP update node features edge_set.senders is cuda", edge_set.senders.is_cuda)
         add_intermediate[des_index].add(feature_tensor)
       features.append(add_intermediate)
+      '''
       '''
       features.append(tf.math.unsorted_segment_sum(edge_set.features,
                                                    edge_set.receivers,

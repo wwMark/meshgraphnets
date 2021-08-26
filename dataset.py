@@ -103,15 +103,16 @@ def split_and_preprocess(noise_field, noise_scale, noise_gamma):
   
   return element_operation
 '''
-
+'''
 def collate_fn(data_list):
   return data_list
+'''
 
 # this function returns a torch dataloader
-def load_dataset(path, split, add_targets=None, split_and_preprocess=None, batch_size=1):
+def load_dataset(path, split, add_targets=None, split_and_preprocess=None, batch_size=1, prefetch_factor=2):
   # DataLoader(FlagSimpleDataset(path='../../../mgn_dataset/flag_simple/', split='train'), batch_size=1)
   # return DataLoader(FlagSimpleDataset(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, shuffle=True, num_workers=1)
-  return DataLoader(FlagSimpleDataset(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, shuffle=True, num_workers=0, collate_fn=collate_fn)
+  return DataLoader(FlagSimpleDataset(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, prefetch_factor=prefetch_factor, shuffle=True, num_workers=0)# , collate_fn=collate_fn)
 
 def batch_dataset(ds, batch_size):
   """Batches input datasets."""

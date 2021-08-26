@@ -20,6 +20,8 @@
 # import tensorflow.compat.v1 as tf
 import torch
 
+device = torch.device('cuda')
+
 # class Normalizer(snt.AbstractModule):
 class Normalizer():
   """Feature normalizer that accumulates statistics online."""
@@ -28,11 +30,11 @@ class Normalizer():
                name='Normalizer'):
     super(Normalizer, self).__init__()
     self._max_accumulations = max_accumulations
-    self._std_epsilon = torch.Tensor([std_epsilon])
-    self._acc_count = torch.zeros(1, dtype=torch.float32)
-    self._num_accumulations = torch.zeros(1, dtype=torch.float32)
-    self._acc_sum = torch.zeros(size, dtype=torch.float32)
-    self._acc_sum_squared = torch.zeros(size, dtype=torch.float32)
+    self._std_epsilon = torch.Tensor([std_epsilon]).to(device)
+    self._acc_count = torch.zeros(1, dtype=torch.float32).to(device)
+    self._num_accumulations = torch.zeros(1, dtype=torch.float32).to(device)
+    self._acc_sum = torch.zeros(size, dtype=torch.float32).to(device)
+    self._acc_sum_squared = torch.zeros(size, dtype=torch.float32).to(device)
     
   def __call__(self, batched_data, accumulate=True):
     """Normalizes input data and accumulates statistics."""
@@ -66,10 +68,10 @@ class Normalizer():
     self._num_accumulations.add(1.)
 
   def _mean(self):
-    safe_count = torch.maximum(self._acc_count, torch.Tensor([1.]))
+    safe_count = torch.maximum(self._acc_count, torch.tensor([1.], device=device))
     return self._acc_sum / safe_count
 
   def _std_with_epsilon(self):
-    safe_count = torch.maximum(self._acc_count, torch.Tensor([1.]))
+    safe_count = torch.maximum(self._acc_count, torch.tensor([1.], device=device))
     std = torch.sqrt(self._acc_sum_squared / safe_count - self._mean()**2)
     return torch.maximum(std, self._std_epsilon)
