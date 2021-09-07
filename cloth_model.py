@@ -33,7 +33,7 @@ device = torch.device('cuda')
 
 class Model(nn.Module):
   """Model for static cloth simulation."""
-  def __init__(self, trajectory_state, params, name='Model'):
+  def __init__(self, params, model, name='Model'):
     super(Model, self).__init__()
     self._params = params
     self._output_normalizer = normalization.Normalizer(
@@ -43,11 +43,7 @@ class Model(nn.Module):
     self._edge_normalizer = normalization.Normalizer(
         size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
-    self.learned_model = encode_process_decode.EncodeProcessDecode(
-                        output_size=self._params['size'],
-                        latent_size=128,
-                        num_layers=2,
-                        message_passing_steps=15)
+    self.learned_model = model
     
     '''
     is_training = False
@@ -112,7 +108,6 @@ class Model(nn.Module):
         edge_sets=[mesh_edges])
 
   def forward(self, inputs, is_training):
-    # print('in cloth model build')
     graph = self._build_graph(inputs, is_training=is_training)
     '''
     if self.learned_model is None:

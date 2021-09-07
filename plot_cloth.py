@@ -24,37 +24,53 @@ from absl import flags
 from matplotlib import animation
 import matplotlib.pyplot as plt
 
+import torch
+
 FLAGS = flags.FLAGS
-flags.DEFINE_string('rollout_path', None, 'Path to rollout pickle file')
+flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\rollout\\rollout.pkl', 'Path to rollout pickle file')
 
 
 def main(unused_argv):
   with open(FLAGS.rollout_path, 'rb') as fp:
     rollout_data = pickle.load(fp)
-
+  '''
+  print("rollout_data")
+  print(len(rollout_data[0]['pred_pos'][0]))
+  print("")
+  '''
   fig = plt.figure(figsize=(8, 8))
   ax = fig.add_subplot(111, projection='3d')
   skip = 10
-  num_steps = rollout_data[0]['gt_pos'].shape[0]
+  num_steps = rollout_data[0]['gt_pos'].shape[1]
+  print()
   num_frames = len(rollout_data) * num_steps // skip
 
   # compute bounds
   bounds = []
+  index_temp = 0
   for trajectory in rollout_data:
-    bb_min = trajectory['gt_pos'].min(axis=(0, 1))
-    bb_max = trajectory['gt_pos'].max(axis=(0, 1))
+    index_temp += 1
+    # print("bb_min shape", trajectory['gt_pos'].shape)
+    bb_min = trajectory['gt_pos'].cpu().numpy().min(axis=(0, 1))
+    bb_max = trajectory['gt_pos'].cpu().numpy().max(axis=(0, 1))
     bounds.append((bb_min, bb_max))
+  print("index_temp", index_temp)
 
   def animate(num):
     step = (num*skip) % num_steps
     traj = (num*skip) // num_steps
     ax.cla()
     bound = bounds[traj]
+    '''
     ax.set_xlim([bound[0][0], bound[1][0]])
     ax.set_ylim([bound[0][1], bound[1][1]])
     ax.set_zlim([bound[0][2], bound[1][2]])
-    pos = rollout_data[traj]['pred_pos'][step]
-    faces = rollout_data[traj]['faces'][step]
+    '''
+    print("pos shape", rollout_data[traj]['pred_pos'].shape)
+    print("squeeze pos shape", torch.squeeze(rollout_data[traj]['pred_pos'], dim=0).shape)
+    print("step", step)
+    pos = torch.squeeze(rollout_data[traj]['pred_pos'], dim=0)[step].cpu().detach()
+    faces = torch.squeeze(rollout_data[traj]['faces'], dim=0)[step].cpu().detach()
     ax.plot_trisurf(pos[:, 0], pos[:, 1], faces, pos[:, 2], shade=True)
     ax.set_title('Trajectory %d Step %d' % (traj, step))
     return fig,

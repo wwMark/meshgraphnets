@@ -14,9 +14,11 @@ from common import NodeType
 device = torch.device('cuda')
 
 class FlagSimpleDataset(Dataset):
-    def __init__(self, path, split, add_targets=None, split_and_preprocess=None):
+    def __init__(self, path, split, add_targets=False, split_and_preprocess=False):
         self.path = path
         self.split = split
+        self._add_targets = add_targets
+        self._split_and_preprocess = split_and_preprocess
         '''
         self.add_targets = add_targets
         self.split_and_preprocess = split_and_preprocess
@@ -45,7 +47,10 @@ class FlagSimpleDataset(Dataset):
 
     def __len__(self):
         # flag simple dataset contains 1000 trajectories, each trajectory contains 400 steps
-        return 1000
+        if self.split == 'train':
+            return 1000
+        elif self.split == 'valid':
+            return 100
 
     def __getitem__(self, idx):
         sample = self.dataset[idx]
@@ -70,8 +75,10 @@ class FlagSimpleDataset(Dataset):
         if self.split_and_preprocess is not None:
             trajectory = self.split_and_preprocess(trajectory)
         '''
-        trajectory = self.add_targets()(trajectory)
-        trajectory = self.split_and_preprocess()(trajectory)
+        if self._add_targets:
+            trajectory = self.add_targets()(trajectory)
+        if self._split_and_preprocess:
+            trajectory = self.split_and_preprocess()(trajectory)
         
         # print("trajectory type in flag_dataset", type(trajectory))
         return trajectory

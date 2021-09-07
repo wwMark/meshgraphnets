@@ -29,6 +29,8 @@ MultiGraph = collections.namedtuple('Graph', ['node_features', 'edge_sets'])
 
 cuda0 = torch.device('cuda:0')
 
+device = torch.device('cuda')
+
 class LazyMLP(nn.Module):
   def __init__(self, output_sizes):
     super().__init__()
@@ -65,8 +67,8 @@ class GraphNetBlock(nn.Module):
     self._edge_model = model_fn(output_size).cuda()
     self._node_model = model_fn(output_size).cuda()
     # self._cpu_cores = mp.cpu_count()
-    self._cpu_cores = 4
-    self._update_node_features_thread_pool = mp.Pool(self._cpu_cores)
+    # self._cpu_cores = 4
+    # self._update_node_features_thread_pool = mp.Pool(self._cpu_cores)
 
   def _update_edge_features(self, node_features, edge_set):
     """Aggregrates node features, and applies edge function."""
@@ -96,9 +98,19 @@ class GraphNetBlock(nn.Module):
     # print("GNB update node features, node feature shape", node_features.shape)
     dim_to_be_got = node_features.shape
     num_nodes = dim_to_be_got[0]
-    features = [node_features]
+    features = [node_features.to('cpu')]
     for edge_set in edge_sets:
+      # print("edge_set.features", edge_set.features.shape)
+      # print("edge_set.receivers", edge_set.receivers.shape)
+      # print("num_nodes", num_nodes)
+      add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1])
+      for index, feature_tensor in enumerate(edge_set.features.to('cpu')):
+        des_index = edge_set.receivers[index].to('cpu')
+        add_intermediate[des_index].add(feature_tensor)
+      features.append(add_intermediate)
+      '''
       # use multiprocessing to decrease execution time
+      
       payload_per_core = edge_set.features.shape[0] // self._cpu_cores
       argument_list = []
       for i in range(self._cpu_cores - 1):
@@ -114,16 +126,11 @@ class GraphNetBlock(nn.Module):
         result.add(add_intermediate)
       features.append(result)
       '''
-      add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1]).to(device=cuda0)
-      for index, feature_tensor in enumerate(edge_set.features):
-        des_index = edge_set.receivers[index]
-        add_intermediate[des_index].add(feature_tensor)
-      features.append(add_intermediate)
-      '''
+
       '''
       features.append(tf.math.unsorted_segment_sum(edge_set.features,
                                                    edge_set.receivers,
-                                                   num_nodes))
+                                                   num_nodes)) m
       '''
     # with tf.variable_scope('node_fn'):
     features = torch.cat(features, axis=-1)
@@ -223,9 +230,9 @@ class EncodeProcessDecode(nn.Module):
     self._output_size = output_size
     self._num_layers = num_layers
     self._message_passing_steps = message_passing_steps
-    self._encoder = Encoder(make_mlp=self._make_mlp, latent_size=self._latent_size)
-    self._processor = Processor(make_mlp=self._make_mlp, output_size=self._latent_size, message_passing_steps=self._message_passing_steps)
-    self._decoder = Decoder(make_mlp=functools.partial(self._make_mlp, layer_norm=False), output_size=self._output_size)
+    self._encoder = Encoder(make_mlp=self._make_mlp, latent_size=self._latent_size).to(device)
+    self._processor = Processor(make_mlp=self._make_mlp, output_size=self._latent_size, message_passing_steps=self._message_passing_steps).to(device)
+    self._decoder = Decoder(make_mlp=functools.partial(self._make_mlp, layer_norm=False), output_size=self._output_size).to(device)
 
   def _make_mlp(self, output_size, layer_norm=True):
       """Builds an MLP."""
@@ -233,7 +240,7 @@ class EncodeProcessDecode(nn.Module):
       network = LazyMLP(widths)
       if layer_norm:
         network = nn.Sequential(network, nn.LayerNorm(normalized_shape=widths[-1])).cuda()
-      return network
+      return network.to(device)
 
   def forward(self, graph):
     """Encodes and processes a multigraph, and returns node features."""
