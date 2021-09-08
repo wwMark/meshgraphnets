@@ -42,7 +42,7 @@ def main(unused_argv):
   ax = fig.add_subplot(111, projection='3d')
   skip = 10
   num_steps = rollout_data[0]['gt_pos'].shape[1]
-  print()
+  # print()
   num_frames = len(rollout_data) * num_steps // skip
 
   # compute bounds
@@ -51,10 +51,9 @@ def main(unused_argv):
   for trajectory in rollout_data:
     index_temp += 1
     # print("bb_min shape", trajectory['gt_pos'].shape)
-    bb_min = trajectory['gt_pos'].cpu().numpy().min(axis=(0, 1))
-    bb_max = trajectory['gt_pos'].cpu().numpy().max(axis=(0, 1))
+    bb_min = torch.squeeze(trajectory['gt_pos'], dim=0).cpu().numpy().min(axis=(0, 1))
+    bb_max = torch.squeeze(trajectory['gt_pos'], dim=0).cpu().numpy().max(axis=(0, 1))
     bounds.append((bb_min, bb_max))
-  print("index_temp", index_temp)
 
   def animate(num):
     step = (num*skip) % num_steps
@@ -62,13 +61,22 @@ def main(unused_argv):
     ax.cla()
     bound = bounds[traj]
     '''
+    print("bounds")
+    print(bounds)
+    print("bound......")
+    print(bound)
+    print("bound[][]")
+    print(bound[0][0])
+    print(bound[1][0])
+    quit()
+    '''
     ax.set_xlim([bound[0][0], bound[1][0]])
     ax.set_ylim([bound[0][1], bound[1][1]])
     ax.set_zlim([bound[0][2], bound[1][2]])
-    '''
-    print("pos shape", rollout_data[traj]['pred_pos'].shape)
-    print("squeeze pos shape", torch.squeeze(rollout_data[traj]['pred_pos'], dim=0).shape)
-    print("step", step)
+
+    # print("pos shape", rollout_data[traj]['pred_pos'].shape)
+    # print("squeeze pos shape", torch.squeeze(rollout_data[traj]['pred_pos'], dim=0).shape)
+    # print("step", step)
     pos = torch.squeeze(rollout_data[traj]['pred_pos'], dim=0)[step].cpu().detach()
     faces = torch.squeeze(rollout_data[traj]['faces'], dim=0)[step].cpu().detach()
     ax.plot_trisurf(pos[:, 0], pos[:, 1], faces, pos[:, 2], shade=True)

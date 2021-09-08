@@ -15,45 +15,29 @@
 # limitations under the License.
 # ============================================================================
 """Runs the learner/evaluator."""
-# python -m meshgraphnets.run_model --model=cloth --mode=train --checkpoint_dir="C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\tmp\checkpoint\" --num_training_steps=1000
 import pickle
 from absl import app
 from absl import flags
-from absl import logging
-import numpy as np
-# import tensorflow.compat.v1 as tf
+
 import torch
 
-from test import encode_process_decode
-
-# from meshgraphnets import cfd_eval
-# from meshgraphnets import cfd_model
-'''
-from meshgraphnets import cloth_eval
-from meshgraphnets import cloth_model
-# from meshgraphnets import core_model
-from meshgraphnets import dataset
-from meshgraphnets import normalization, common
-'''
 import cloth_eval
 import cloth_model
-# from meshgraphnets import core_model
 import dataset
-import normalization, common
-from test import encode_process_decode
+import normalization
+import encode_process_decode
 
 import time
-
-# from torchsummary import summary
+import datetime
 
 device = torch.device('cuda')
 
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('mode', 'eval', ['train', 'eval', 'all'],
+flags.DEFINE_enum('mode', 'train', ['train', 'eval', 'all'],
                   'Train model, or run evaluation.')
 flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
                   'Select model to run.')
-flags.DEFINE_string('checkpoint_dir', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth', 'Directory to save checkpoint')
+flags.DEFINE_string('checkpoint_dir', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\', 'Directory to save checkpoint')
 flags.DEFINE_string('dataset_dir',
                     'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\deepmind-research\\meshgraphnets\\data\\flag_simple\\',
                     'Directory to load dataset from.')
@@ -61,8 +45,9 @@ flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit
                     'Pickle file to save eval trajectories')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('num_rollouts',2, 'No. of rollout trajectories')
-flags.DEFINE_integer('num_training_steps', int(10e2), 'No. of training steps')
+flags.DEFINE_integer('num_rollouts', 20, 'No. of rollout trajectories')
+flags.DEFINE_integer('num_training_steps', int(1e6), 'No. of training steps')
+flags.DEFINE_string('last_checkpoint_file', None, 'Path to the checkpoint file of a network that should continue training')
 
 PARAMETERS = {
     # 'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
@@ -98,7 +83,6 @@ def learner(params, model):
     print("ds loader iter", iter(ds_loader))
     print("type of ds loader iter next", type(next(iter(ds_loader))))
     '''
-    trajectory_state_for_init = next(iter(ds_loader))
 
     # training process definition
     optimizer = torch.optim.Adam(model.learned_model.parameters(recurse=True), lr=1e-4)
@@ -106,14 +90,15 @@ def learner(params, model):
 
     # model training
     is_training = True
-    ds_iterator = iter(ds_loader)
     batches_in_dataset = 1000 // batch_size
-    total_epoch = FLAGS.num_training_steps // batches_in_dataset
-    for epoch in range(FLAGS.num_training_steps // batches_in_dataset):
+    total_epoch = FLAGS.num_training_steps // (batches_in_dataset * 399)
+    epoch_count = 0
+    for epoch in range(total_epoch):
         # every time when model.train is called, model will train itself with the whole dataset
         print("Epoch", epoch + 1, "/", total_epoch)
-        # for batch_index in range(batches_in_dataset):
-        for batch_index in [0]:
+        ds_iterator = iter(ds_loader)
+        for batch_index in range(batches_in_dataset):
+        # for batch_index in [0]:
             print("    Batch index", batch_index + 1, "/", batches_in_dataset)
             data = next(ds_iterator)
             # print(data[0]['world_pos'].shape)
@@ -124,9 +109,6 @@ def learner(params, model):
             loss_fn = torch.nn.MSELoss()
             count = 0
             for data_frame_index, data_frame in enumerate(data):
-                count += 1
-                if count == 2:
-                    break
                 network_output = model(data_frame, is_training)
                 print("        Finished", data_frame_index + 1, " frame.")
                 loss = loss_fn(network_output, target(data_frame))
@@ -134,9 +116,8 @@ def learner(params, model):
                 loss.backward()
             optimizer.step()
             scheduler.step()
-    # torch.save(model.learned_model.state_dict(), FLAGS.checkpoint_dir)
-    torch.save(model.learned_model, FLAGS.checkpoint_dir)
-    # torch.save(model, FLAGS.checkpoint_dir)
+            torch.save(model.learned_model, FLAGS.checkpoint_dir + "checkpoint" + "_" + str((batch_index + 1) % 10) + ".pth")
+    torch.save(model.learned_model, FLAGS.checkpoint_dir + "checkpoint.pth")
     return model
 
 def target(inputs):
@@ -176,29 +157,34 @@ def evaluator(params, model):
 
 
 def main(argv):
-    del argv
     start = time.time()
+    start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
+    print("Program started at time", start_datetime)
     params = PARAMETERS[FLAGS.model]
-    learned_model = encode_process_decode.EncodeProcessDecode(
-        output_size=params['size'],
-        latent_size=128,
-        num_layers=2,
-        message_passing_steps=15)
-    model = params['model'].Model(params, learned_model)
-    model.to(device)
     if FLAGS.mode == 'train':
         print("Start training......")
+        if FLAGS.last_checkpoint_file is not None:
+            learned_model = torch.load(FLAGS.checkpoint_dir + "checkpoint.pth")
+            learned_model.to(device)
+        else:
+            learned_model = encode_process_decode.EncodeProcessDecode(
+                output_size=params['size'],
+                latent_size=128,
+                num_layers=2,
+                message_passing_steps=15)
+            learned_model.to(device)
+        model = params['model'].Model(params, learned_model)
+        model.to(device)
         learner(params, model)
         print("Finished training......")
     elif FLAGS.mode == 'eval':
         print("Start evaluating......")
-        # learned_model.load_state_dict(torch.load(FLAGS.checkpoint_dir))
-        learned_model = torch.load(FLAGS.checkpoint_dir)
+        learned_model = torch.load(FLAGS.checkpoint_dir + "checkpoint.pth")
         learned_model.to(device)
         learned_model.eval()
         model = params['model'].Model(params, learned_model)
-        model.eval()
         model.to(device)
+        model.eval()
         evaluator(params, model)
         '''
         prefix = "learned_model."
@@ -211,8 +197,21 @@ def main(argv):
         print("Finished evaluating......")
     elif FLAGS.mode == 'all':
         print("Start all......")
+        if FLAGS.last_checkpoint_file is not None:
+            learned_model = torch.load(FLAGS.checkpoint_dir + "checkpoint.pth")
+            learned_model.to(device)
+        else:
+            learned_model = encode_process_decode.EncodeProcessDecode(
+                output_size=params['size'],
+                latent_size=128,
+                num_layers=2,
+                message_passing_steps=15)
+            learned_model.to(device)
+        model = params['model'].Model(params, learned_model)
+        model.to(device)
         learner(params, model)
-        learned_model = torch.load(FLAGS.checkpoint_dir)
+        learned_model = torch.load(FLAGS.checkpoint_dir + "checkpoint.pth")
+        learned_model.to(device)
         learned_model.eval()
         model = params['model'].Model(params, learned_model)
         model.eval()
@@ -220,8 +219,12 @@ def main(argv):
         evaluator(params, model)
         print("Finished all......")
     end = time.time()
+    end_datetime = datetime.datetime.fromtimestamp(end).strftime('%c')
+    print("Program ended at time", end_datetime)
     print("Finished FLAGS.mode", FLAGS.mode)
-    print("Elapsed time", end - start)
+    elapsed_time_in_second = end - start
+    elapsed_time = str(datetime.timedelta(seconds=elapsed_time_in_second))
+    print("Elapsed time", elapsed_time)
 
 
 if __name__ == '__main__':

@@ -63,8 +63,8 @@ class Model(nn.Module):
     # print("inputs", inputs)
     velocity = inputs['world_pos'] - inputs['prev|world_pos']
     # node_type = tf.one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE)
-    # print("inputs node_type", inputs['node_type'][:, :, 0])
-    # quit()
+    print("inputs node_type shape", inputs['node_type'][:, :, 0].shape)
+    quit()
     node_type = F.one_hot(inputs['node_type'][:, :, 0][0].to(torch.int64), common.NodeType.SIZE)
     '''
     print("shape velocity", velocity.shape)
@@ -109,22 +109,6 @@ class Model(nn.Module):
 
   def forward(self, inputs, is_training):
     graph = self._build_graph(inputs, is_training=is_training)
-    '''
-    if self.learned_model is None:
-      self.learned_model = encode_process_decode.EncodeProcessDecode(
-        output_size=self._params['size'],
-        latent_size=128,
-        num_layers=2,
-        message_passing_steps=15,
-        graph=graph)
-    '''
-    # show graph
-    '''
-    print('type of graph: ' + type(graph))
-    print('type of graph.node_features: ' + type(graph.node_features))
-    print('type of graph.edge_sets: ' + type(graph.edge_sets))
-    quit()
-    '''
     network_output = self.learned_model(graph)
     if is_training:
       # build target acceleration

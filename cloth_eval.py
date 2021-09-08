@@ -37,8 +37,8 @@ def _rollout(model, initial_state, num_steps):
         prediction = model({**initial_state,
                             'prev|world_pos': prev_pos,
                             'world_pos': cur_pos}, is_training=False)
-    memory_next = torch.cuda.memory_allocated(device) / (1024 *1024)
-    print("memory usage", memory_next - memory_prev)
+    # memory_next = torch.cuda.memory_allocated(device) / (1024 *1024)
+    # print("memory usage", memory_next - memory_prev)
     # don't update kinematic nodes
     next_pos = torch.where(mask, torch.squeeze(prediction), torch.squeeze(cur_pos))
     trajectory.append(cur_pos)
