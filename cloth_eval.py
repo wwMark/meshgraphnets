@@ -19,16 +19,14 @@
 # import tensorflow.compat.v1 as tf
 import torch
 import common
-# from common import NodeType
 
 device = torch.device('cuda')
 
 
 def _rollout(model, initial_state, num_steps):
   """Rolls out a model trajectory."""
-  # print("in rollout")
-  mask = torch.eq(torch.squeeze(initial_state['node_type'], 0)[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device))
-  mask = torch.stack((mask, mask, mask), dim=1)
+  node_type = torch.squeeze(initial_state['node_type'], dim=0)
+  mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device))
 
   def step_fn(prev_pos, cur_pos, trajectory):
     # print("in step fn")

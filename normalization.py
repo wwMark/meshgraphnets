@@ -19,15 +19,15 @@
 # import sonnet as snt
 # import tensorflow.compat.v1 as tf
 import torch
+import torch.nn as nn
 
 device = torch.device('cuda')
 
 # class Normalizer(snt.AbstractModule):
-class Normalizer():
+class Normalizer(nn.Module):
   """Feature normalizer that accumulates statistics online."""
 
-  def __init__(self, size, max_accumulations=10**6, std_epsilon=1e-8,
-               name='Normalizer'):
+  def __init__(self, size, name, max_accumulations=10**6, std_epsilon=1e-8,):
     super(Normalizer, self).__init__()
     self._max_accumulations = max_accumulations
     self._std_epsilon = torch.Tensor([std_epsilon]).to(device)
@@ -36,11 +36,11 @@ class Normalizer():
     self._acc_sum = torch.zeros(size, dtype=torch.float32).to(device)
     self._acc_sum_squared = torch.zeros(size, dtype=torch.float32).to(device)
     
-  def __call__(self, batched_data, accumulate=True):
+  def forward(self, batched_data, accumulate=True):
     """Normalizes input data and accumulates statistics."""
     if accumulate and self._num_accumulations < self._max_accumulations:
       # stop accumulating after a million updates, to prevent accuracy issues
-      update_op = self._accumulate(batched_data)
+      self._accumulate(batched_data)
     return (batched_data - self._mean()) / self._std_with_epsilon()
 
   # @snt.reuse_variables
@@ -50,16 +50,10 @@ class Normalizer():
 
   def _accumulate(self, batched_data):
     """Function to perform the accumulation of the batch_data statistics."""
-    # count = tf.cast(tf.shape(batched_data)[0], tf.float32)
-    dimension = len(batched_data.size())
-    # print("type of dimension", type(dimension))
-    # print("dimension", dimension)
-    count = torch.tensor(dimension, dtype=torch.float32)
+    count = torch.tensor(batched_data.shape[0], dtype=torch.float32, device=device)
 
-    # data_sum = tf.reduce_sum(batched_data, axis=0)
     data_sum = torch.sum(batched_data, dim=0)
 
-    # squared_data_sum = tf.reduce_sum(batched_data**2, axis=0)
     squared_data_sum = torch.sum(batched_data**2, dim=0)
 
     self._acc_sum.add(data_sum)

@@ -48,21 +48,17 @@ def triangles_to_edges(faces):
   # sort & pack edges as single tf.int64
   receivers, _ = torch.min(edges, dim=1)
   senders, _ = torch.max(edges, dim=1)
-  '''
-  print("receivers shape", receivers.shape)
-  print("senders shape", senders.shape)
-  '''
-  '''
+
   packed_edges = torch.stack((senders, receivers), dim=1)
-  print("packed_edges", packed_edges)
-  packed_edges = packed_edges.to(torch.int64)
-  print("packed_edges after conversion", packed_edges)
   # remove duplicates and unpack
-  unique_edges = torch.unique(packed_edges, return_inverse=False, return_counts=False)
-  print("unique_edges", unique_edges)
-  unique_edges = unique_edges.to(torch.int32)
-  print("unique_edges after conversion", unique_edges)
+  unique_edges = torch.unique(packed_edges, return_inverse=False, return_counts=False, dim=0)
   senders, receivers = torch.unbind(unique_edges, dim=1)
+  senders = senders.to(torch.int64)
+  receivers = receivers.to(torch.int64)
+  return (torch.cat((senders, receivers), dim=0), torch.cat((receivers, senders), dim=0))
+
+
+
   '''
   receivers = torch.unique(receivers)
   senders = torch.unique(senders)
@@ -72,3 +68,4 @@ def triangles_to_edges(faces):
   re = torch.cat((receivers, senders), axis=0)
   re = re.to(torch.int64)
   return (se, re)
+  '''
