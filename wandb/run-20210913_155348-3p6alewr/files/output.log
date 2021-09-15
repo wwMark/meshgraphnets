@@ -1,0 +1,55 @@
+
+Evaluating trajectory 1
+    evaluation mse loss
+    tensor(86323.3281, device='cuda:0')
+    evaluation l1 loss
+    tensor(187.5624, device='cuda:0')
+Evaluating trajectory 2
+    evaluation mse loss
+    tensor(84917.6016, device='cuda:0')
+    evaluation l1 loss
+    tensor(188.4668, device='cuda:0')
+Evaluating trajectory 3
+    evaluation mse loss
+    tensor(86673.5391, device='cuda:0')
+    evaluation l1 loss
+    tensor(189.9715, device='cuda:0')
+Evaluating trajectory 4
+    evaluation mse loss
+    tensor(85360.3359, device='cuda:0')
+    evaluation l1 loss
+    tensor(189.9253, device='cuda:0')
+Evaluating trajectory 5
+    evaluation mse loss
+    tensor(87787.2109, device='cuda:0')
+    evaluation l1 loss
+    tensor(192.3868, device='cuda:0')
+Evaluating trajectory 6
+    evaluation mse loss
+    tensor(85659.1562, device='cuda:0')
+    evaluation l1 loss
+    tensor(187.8159, device='cuda:0')
+Evaluating trajectory 7
+    evaluation mse loss
+    tensor(84172.4609, device='cuda:0')
+    evaluation l1 loss
+    tensor(188.3752, device='cuda:0')
+Evaluating trajectory 8
+    evaluation mse loss
+    tensor(85806.7500, device='cuda:0')
+    evaluation l1 loss
+    tensor(187.7005, device='cuda:0')
+Evaluating trajectory 9
+    evaluation mse loss
+    tensor(86636.1719, device='cuda:0')
+    evaluation l1 loss
+    tensor(187.8926, device='cuda:0')
+Evaluating trajectory 10
+    evaluation mse loss
+    tensor(84290.2734, device='cuda:0')
+    evaluation l1 loss
+    tensor(188.3464, device='cuda:0')
+Finished all......
+Program ended at time Mon Sep 13 15:55:24 2021
+Finished FLAGS.mode all
+Elapsed time 0:43:41.528499

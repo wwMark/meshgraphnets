@@ -1,0 +1,244 @@
+2021-09-14 17:57:46,885 INFO    MainThread:43320 [internal.py:wandb_internal():86] W&B internal server running at pid: 43320, started at: 2021-09-14 17:57:46.876003
+2021-09-14 17:57:46,887 INFO    WriterThread:43320 [datastore.py:open_for_write():77] open: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\run-c9ln75hd.wandb
+2021-09-14 17:57:46,887 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: check_version
+2021-09-14 17:57:46,889 DEBUG   SenderThread:43320 [sender.py:send():182] send: header
+2021-09-14 17:57:46,889 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: check_version
+2021-09-14 17:57:47,016 DEBUG   SenderThread:43320 [sender.py:send():182] send: run
+2021-09-14 17:57:47,333 INFO    SenderThread:43320 [dir_watcher.py:__init__():169] watching files in: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files
+2021-09-14 17:57:47,333 INFO    SenderThread:43320 [sender.py:_start_run_threads():740] run started: c9ln75hd with start time 1631635066
+2021-09-14 17:57:47,333 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:57:47,333 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: run_start
+2021-09-14 17:57:47,333 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:57:48,334 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_created():217] file/dir created: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:57:49,872 DEBUG   HandlerThread:43320 [meta.py:__init__():40] meta init
+2021-09-14 17:57:49,872 DEBUG   HandlerThread:43320 [meta.py:__init__():54] meta init done
+2021-09-14 17:57:49,872 DEBUG   HandlerThread:43320 [meta.py:probe():211] probe
+2021-09-14 17:57:49,880 DEBUG   HandlerThread:43320 [meta.py:_setup_git():201] setup git
+2021-09-14 17:57:49,934 DEBUG   HandlerThread:43320 [meta.py:_setup_git():208] setup git done
+2021-09-14 17:57:49,934 DEBUG   HandlerThread:43320 [meta.py:_save_pip():58] save pip
+2021-09-14 17:57:49,934 DEBUG   HandlerThread:43320 [meta.py:_save_pip():72] save pip done
+2021-09-14 17:57:49,934 DEBUG   HandlerThread:43320 [meta.py:_save_conda():79] save conda
+2021-09-14 17:57:49,938 ERROR   HandlerThread:43320 [meta.py:_save_conda():86] Error saving conda packages
+Traceback (most recent call last):
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\wandb\sdk\internal\meta.py", line 84, in _save_conda
+    subprocess.call(["conda", "env", "export"], stdout=f)
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\subprocess.py", line 349, in call
+    with Popen(*popenargs, **kwargs) as p:
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\subprocess.py", line 951, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\subprocess.py", line 1420, in _execute_child
+    hp, ht, pid, tid = _winapi.CreateProcess(executable, args,
+FileNotFoundError: [WinError 2] 系统找不到指定的文件。
+2021-09-14 17:57:49,941 DEBUG   HandlerThread:43320 [meta.py:_save_conda():87] save conda done
+2021-09-14 17:57:49,941 DEBUG   HandlerThread:43320 [meta.py:probe():249] probe done
+2021-09-14 17:57:49,945 DEBUG   SenderThread:43320 [sender.py:send():182] send: files
+2021-09-14 17:57:49,945 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-metadata.json with policy now
+2021-09-14 17:57:49,949 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: stop_status
+2021-09-14 17:57:49,949 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: stop_status
+2021-09-14 17:57:50,334 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_created():217] file/dir created: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:57:50,335 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_created():217] file/dir created: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\requirements.txt
+2021-09-14 17:57:50,335 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_created():217] file/dir created: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-metadata.json
+2021-09-14 17:57:50,335 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_created():217] file/dir created: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\conda-environment.yaml
+2021-09-14 17:57:50,552 INFO    Thread-19 :43320 [upload_job.py:push():137] Uploaded file C:\Users\Mark\AppData\Local\Temp\tmp2ic4rcarwandb\3bzqorfn-wandb-metadata.json
+2021-09-14 17:57:52,336 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:57:54,338 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:58:02,915 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:02,916 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:02,918 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:02,918 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:02,918 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:02,919 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:03,344 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:58:04,344 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:58:05,150 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: stop_status
+2021-09-14 17:58:05,151 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: stop_status
+2021-09-14 17:58:11,829 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:11,829 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:11,831 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:11,831 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:11,831 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:11,832 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:12,350 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:58:14,351 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:58:20,363 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: stop_status
+2021-09-14 17:58:20,363 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: stop_status
+2021-09-14 17:58:20,718 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:20,718 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:20,721 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:20,721 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:20,721 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:20,722 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:21,356 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:58:22,357 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:58:29,438 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:29,438 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:29,440 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:29,440 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:29,441 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:29,441 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:30,363 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:58:30,363 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:58:35,609 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: stop_status
+2021-09-14 17:58:35,609 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: stop_status
+2021-09-14 17:58:38,321 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:38,321 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:38,323 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:38,323 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:38,323 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:38,324 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:38,368 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:58:40,369 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:58:47,315 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:47,315 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:47,316 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:47,316 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:47,316 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:47,317 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:47,374 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:58:48,375 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:58:50,841 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: stop_status
+2021-09-14 17:58:50,842 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: stop_status
+2021-09-14 17:58:56,181 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:56,181 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:56,183 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:56,184 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:58:56,184 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:58:56,184 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:58:56,380 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:58:58,382 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:59:05,048 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:59:05,048 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:59:05,049 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:59:05,049 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:59:05,049 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:59:05,050 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:59:05,387 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:59:06,114 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: stop_status
+2021-09-14 17:59:06,115 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: stop_status
+2021-09-14 17:59:06,387 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:59:13,976 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:59:13,976 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:59:13,978 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:59:13,978 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:59:13,979 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:59:13,979 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:59:14,393 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:59:16,394 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:59:21,352 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: stop_status
+2021-09-14 17:59:21,352 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: stop_status
+2021-09-14 17:59:22,850 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:59:22,850 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:59:22,851 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:59:22,851 DEBUG   SenderThread:43320 [sender.py:send():182] send: history
+2021-09-14 17:59:22,851 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:59:22,852 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:59:23,400 INFO    Thread-14 :43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:59:24,064 DEBUG   SenderThread:43320 [sender.py:send():182] send: telemetry
+2021-09-14 17:59:24,064 DEBUG   SenderThread:43320 [sender.py:send():182] send: exit
+2021-09-14 17:59:24,064 INFO    SenderThread:43320 [sender.py:send_exit():291] handling exit code: 0
+2021-09-14 17:59:24,064 INFO    SenderThread:43320 [sender.py:send_exit():293] handling runtime: 96
+2021-09-14 17:59:24,066 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:24,066 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:59:24,066 INFO    SenderThread:43320 [sender.py:send_exit():303] send defer
+2021-09-14 17:59:24,066 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:24,067 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:24,067 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 0
+2021-09-14 17:59:24,067 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:24,067 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 0
+2021-09-14 17:59:24,067 INFO    SenderThread:43320 [sender.py:transition_state():316] send defer: 1
+2021-09-14 17:59:24,067 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:24,067 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 1
+2021-09-14 17:59:24,067 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:24,068 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 1
+2021-09-14 17:59:24,068 INFO    SenderThread:43320 [sender.py:transition_state():316] send defer: 2
+2021-09-14 17:59:24,068 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:24,068 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 2
+2021-09-14 17:59:24,068 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:24,068 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 2
+2021-09-14 17:59:24,068 INFO    SenderThread:43320 [sender.py:transition_state():316] send defer: 3
+2021-09-14 17:59:24,068 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:24,068 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 3
+2021-09-14 17:59:24,068 DEBUG   SenderThread:43320 [sender.py:send():182] send: summary
+2021-09-14 17:59:24,069 INFO    SenderThread:43320 [sender.py:_save_file():873] saving file wandb-summary.json with policy end
+2021-09-14 17:59:24,069 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:24,069 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 3
+2021-09-14 17:59:24,069 INFO    SenderThread:43320 [sender.py:transition_state():316] send defer: 4
+2021-09-14 17:59:24,069 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:24,069 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 4
+2021-09-14 17:59:24,069 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:24,070 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 4
+2021-09-14 17:59:24,167 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:24,319 INFO    SenderThread:43320 [sender.py:transition_state():316] send defer: 5
+2021-09-14 17:59:24,320 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:24,320 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:24,320 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 5
+2021-09-14 17:59:24,320 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:24,320 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 5
+2021-09-14 17:59:24,320 INFO    SenderThread:43320 [dir_watcher.py:finish():283] shutting down directory watcher
+2021-09-14 17:59:24,401 INFO    SenderThread:43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:59:24,401 INFO    SenderThread:43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:59:24,401 INFO    SenderThread:43320 [dir_watcher.py:_on_file_modified():230] file/dir modified: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\config.yaml
+2021-09-14 17:59:24,402 INFO    SenderThread:43320 [dir_watcher.py:finish():313] scan: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files
+2021-09-14 17:59:24,402 INFO    SenderThread:43320 [dir_watcher.py:finish():327] scan save: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\conda-environment.yaml conda-environment.yaml
+2021-09-14 17:59:24,402 INFO    SenderThread:43320 [dir_watcher.py:finish():327] scan save: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\config.yaml config.yaml
+2021-09-14 17:59:24,402 INFO    SenderThread:43320 [dir_watcher.py:finish():327] scan save: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log output.log
+2021-09-14 17:59:24,403 INFO    SenderThread:43320 [dir_watcher.py:finish():327] scan save: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\requirements.txt requirements.txt
+2021-09-14 17:59:24,407 INFO    SenderThread:43320 [dir_watcher.py:finish():327] scan save: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-metadata.json wandb-metadata.json
+2021-09-14 17:59:24,408 INFO    SenderThread:43320 [dir_watcher.py:finish():327] scan save: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json wandb-summary.json
+2021-09-14 17:59:24,409 INFO    SenderThread:43320 [sender.py:transition_state():316] send defer: 6
+2021-09-14 17:59:24,414 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:24,414 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 6
+2021-09-14 17:59:24,415 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:24,415 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 6
+2021-09-14 17:59:24,415 INFO    SenderThread:43320 [file_pusher.py:finish():177] shutting down file pusher
+2021-09-14 17:59:24,421 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:24,421 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:24,522 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:24,523 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:24,624 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:24,624 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:24,725 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:24,726 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:24,827 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:24,828 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:24,929 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:24,930 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:24,958 INFO    Thread-20 :43320 [upload_job.py:push():137] Uploaded file C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\config.yaml
+2021-09-14 17:59:24,974 INFO    Thread-21 :43320 [upload_job.py:push():137] Uploaded file C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\output.log
+2021-09-14 17:59:24,988 INFO    Thread-23 :43320 [upload_job.py:push():137] Uploaded file C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\wandb-summary.json
+2021-09-14 17:59:24,995 INFO    Thread-22 :43320 [upload_job.py:push():137] Uploaded file C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\files\requirements.txt
+2021-09-14 17:59:25,031 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:25,032 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:25,133 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:25,134 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:25,196 INFO    Thread-13 :43320 [sender.py:transition_state():316] send defer: 7
+2021-09-14 17:59:25,196 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:25,196 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 7
+2021-09-14 17:59:25,196 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:25,196 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 7
+2021-09-14 17:59:25,235 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:25,726 INFO    SenderThread:43320 [sender.py:transition_state():316] send defer: 8
+2021-09-14 17:59:25,726 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:25,727 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:25,727 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 8
+2021-09-14 17:59:25,727 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:25,727 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 8
+2021-09-14 17:59:25,727 INFO    SenderThread:43320 [sender.py:transition_state():316] send defer: 9
+2021-09-14 17:59:25,727 DEBUG   SenderThread:43320 [sender.py:send():182] send: final
+2021-09-14 17:59:25,727 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: defer
+2021-09-14 17:59:25,727 DEBUG   SenderThread:43320 [sender.py:send():182] send: footer
+2021-09-14 17:59:25,728 INFO    HandlerThread:43320 [handler.py:handle_request_defer():143] handle defer: 9
+2021-09-14 17:59:25,728 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: defer
+2021-09-14 17:59:25,728 INFO    SenderThread:43320 [sender.py:send_request_defer():312] handle sender defer: 9
+2021-09-14 17:59:25,828 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: poll_exit
+2021-09-14 17:59:25,828 DEBUG   SenderThread:43320 [sender.py:send_request():196] send_request: poll_exit
+2021-09-14 17:59:25,828 INFO    SenderThread:43320 [file_pusher.py:join():182] waiting for file pusher
+2021-09-14 17:59:25,830 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: get_summary
+2021-09-14 17:59:25,830 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: sampled_history
+2021-09-14 17:59:25,831 DEBUG   HandlerThread:43320 [handler.py:handle_request():126] handle_request: shutdown
+2021-09-14 17:59:25,831 INFO    HandlerThread:43320 [handler.py:finish():683] shutting down handler
+2021-09-14 17:59:26,728 INFO    WriterThread:43320 [datastore.py:close():281] close: C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\wandb\run-20210914_175746-c9ln75hd\run-c9ln75hd.wandb
+2021-09-14 17:59:26,829 INFO    SenderThread:43320 [sender.py:finish():979] shutting down sender
+2021-09-14 17:59:26,829 INFO    SenderThread:43320 [file_pusher.py:finish():177] shutting down file pusher
+2021-09-14 17:59:26,829 INFO    SenderThread:43320 [file_pusher.py:join():182] waiting for file pusher
+2021-09-14 17:59:26,830 INFO    MainThread:43320 [internal.py:handle_exit():76] Internal process exited

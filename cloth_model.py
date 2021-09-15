@@ -28,11 +28,12 @@ device = torch.device('cuda')
 
 class Model(nn.Module):
   """Model for static cloth simulation."""
-  def __init__(self, params, model):
+  def __init__(self, params, model, output_normalizer):
     super(Model, self).__init__()
     self._params = params
-    self._output_normalizer = normalization.Normalizer(
-        size=3, name='output_normalizer')
+    # self._output_normalizer = normalization.Normalizer(
+    #    size=3, name='output_normalizer')
+    self._output_normalizer = output_normalizer
     self._node_normalizer = normalization.Normalizer(
         size=3+common.NodeType.SIZE, name='node_normalizer')
     self._edge_normalizer = normalization.Normalizer(
@@ -47,6 +48,7 @@ class Model(nn.Module):
     node_type = torch.squeeze(inputs['node_type'], dim=0)
     velocity = world_pos - prev_world_pos
     node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE)
+
     node_features = torch.cat((velocity, node_type), dim=-1)
 
     cells = torch.squeeze(inputs['cells'], dim=0)
@@ -65,42 +67,33 @@ class Model(nn.Module):
 
     mesh_edges = encode_process_decode.EdgeSet(
         name='mesh_edges',
-        features=self._edge_normalizer(edge_features, is_training),
+        # features=self._edge_normalizer(edge_features, is_training),
+        features=edge_features,
         receivers=receivers,
         senders=senders)
     return encode_process_decode.MultiGraph(
-        node_features=self._node_normalizer(node_features, is_training),
+        # node_features=self._node_normalizer(node_features, is_training),
+        node_features=node_features,
         edge_sets=[mesh_edges])
 
   def forward(self, inputs, is_training):
     graph = self._build_graph(inputs, is_training=is_training)
-    network_output = self.learned_model(graph)
-
-    world_pos = torch.squeeze(inputs['world_pos'], dim=0)
-    prev_world_pos = torch.squeeze(inputs['prev|world_pos'], dim=0)
-    target_world_pos = torch.squeeze(inputs['target|world_pos'], dim=0)
     if is_training:
-      # build target acceleration
-      cur_position = world_pos
-      prev_position = prev_world_pos
-      target_position = target_world_pos
-      target_acceleration = target_position - 2*cur_position + prev_position
-      target_normalized = self._output_normalizer(target_acceleration).to(device)
-
-      # build loss
-      node_type = torch.squeeze(inputs['node_type'], dim=0)
-      loss_mask = torch.equal(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
-      error = torch.sum((target_normalized - network_output)**2, dim=1)
-      loss = torch.mean(error[loss_mask])
-      return loss
+        return self.learned_model(graph)
     else:
-      return self._update(inputs, network_output)
+        return self._update(inputs, self.learned_model(graph))
+
 
   def _update(self, inputs, per_node_network_output):
     """Integrate model outputs."""
-    acceleration = self._output_normalizer.inverse(per_node_network_output)
+    # return per_node_network_output
+
+    # acceleration = self._output_normalizer.inverse(per_node_network_output)
+    acceleration = per_node_network_output
     # integrate forward
     cur_position = torch.squeeze(inputs['world_pos'], dim=0)
     prev_position = torch.squeeze(inputs['prev|world_pos'], dim=0)
-    position = 2*cur_position + acceleration - prev_position
+    position = 2 * cur_position + acceleration - prev_position
+    # print(position)
     return position
+

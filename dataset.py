@@ -28,7 +28,6 @@ import json
 # import flag_simple_torch_dataset
 from migration_utilities.flag_simple_torch_dataset import FlagSimpleDataset
 
-import tensorflow.compat.v1 as tf
 import torch
 from torch.utils.data import DataLoader
 

@@ -1,0 +1,22 @@
+{
+    "os": "Windows-10-10.0.19042-SP0",
+    "python": "3.9.6",
+    "heartbeatAt": "2021-09-14T15:57:49.872002",
+    "startedAt": "2021-09-14T15:57:46.018502",
+    "docker": null,
+    "cpu_count": 20,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\run_model.py",
+    "codePath": "run_model.py",
+    "git": {
+        "remote": "https://github.com/wwMark/meshgraphnets.git",
+        "commit": "83f44641a898d4aef492a71a91cc31eefc62b371"
+    },
+    "email": "ruoheng.ma@gmail.com",
+    "root": "C:/Users/Mark/iCloudDrive/master_arbeit/implementation/meshgraphnets",
+    "host": "DESKTOP-ERG3M0I",
+    "username": "Mark",
+    "executable": "C:\\Users\\Mark\\anaconda3\\envs\\tf2_mgn4\\python.exe"
+}

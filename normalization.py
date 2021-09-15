@@ -29,12 +29,14 @@ class Normalizer(nn.Module):
 
   def __init__(self, size, name, max_accumulations=10**6, std_epsilon=1e-8,):
     super(Normalizer, self).__init__()
+    self._name = name
     self._max_accumulations = max_accumulations
-    self._std_epsilon = torch.Tensor([std_epsilon]).to(device)
-    self._acc_count = torch.zeros(1, dtype=torch.float32).to(device)
-    self._num_accumulations = torch.zeros(1, dtype=torch.float32).to(device)
-    self._acc_sum = torch.zeros(size, dtype=torch.float32).to(device)
-    self._acc_sum_squared = torch.zeros(size, dtype=torch.float32).to(device)
+    self._std_epsilon = torch.tensor([std_epsilon], requires_grad=False).to(device)
+
+    self._acc_count = torch.zeros(1, dtype=torch.float32, requires_grad=False).to(device)
+    self._num_accumulations = torch.zeros(1, dtype=torch.float32, requires_grad=False).to(device)
+    self._acc_sum = torch.zeros(size, dtype=torch.float32, requires_grad=False).to(device)
+    self._acc_sum_squared = torch.zeros(size, dtype=torch.float32, requires_grad=False).to(device)
     
   def forward(self, batched_data, accumulate=True):
     """Normalizes input data and accumulates statistics."""
@@ -56,10 +58,20 @@ class Normalizer(nn.Module):
 
     squared_data_sum = torch.sum(batched_data**2, dim=0)
 
-    self._acc_sum.add(data_sum)
-    self._acc_sum_squared.add(squared_data_sum)
-    self._acc_count.add(count)
-    self._num_accumulations.add(1.)
+    self._acc_sum = self._acc_sum.add(data_sum)
+    self._acc_sum_squared = self._acc_sum_squared.add(squared_data_sum)
+    self._acc_count = self._acc_count.add(count)
+    self._num_accumulations = self._num_accumulations.add(1.)
+    if self._name == 'output_normalizer':
+      # print("            batched_data.shape")
+      # print("           ", batched_data.shape)
+      '''
+      print("            count", count)
+      print("            data_sum", data_sum)
+      print("            squared_data_sum", squared_data_sum)
+      print("            self._acc_count", self._acc_count)
+      print("            self._acc_sum", self._acc_sum)
+      '''
 
   def _mean(self):
     safe_count = torch.maximum(self._acc_count, torch.tensor([1.], device=device))

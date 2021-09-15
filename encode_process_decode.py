@@ -37,6 +37,7 @@ class LazyMLP(nn.Module):
         for index, output_size in enumerate(output_sizes):
             # self.layers.add_module("linear_%d" % index, LazyLinear(output_size))
             self.layers.add_module("linear_%d" % index, nn.LazyLinear(output_size))
+        # self.layers.add_module("relu", nn.ReLU6())
 
     def forward(self, input):
         input = input.to(device)
@@ -147,7 +148,7 @@ class GraphNetBlock(nn.Module):
         new_node_features = self._update_node_features(graph.node_features, new_edge_sets)
 
         # add residual connections
-        new_node_features +=  graph.node_features
+        new_node_features += graph.node_features
         new_edge_sets = [es._replace(features=es.features + old_es.features)
                          for es, old_es in zip(new_edge_sets, graph.edge_sets)]
         return MultiGraph(new_node_features, new_edge_sets)

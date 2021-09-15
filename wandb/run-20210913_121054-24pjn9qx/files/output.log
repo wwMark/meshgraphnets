@@ -1,0 +1,26 @@
+
+Start training......
+C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\torch\nn\modules\lazy.py:178: UserWarning: Lazy modules are a new feature under heavy development so changes to the API or functionality can happen at any moment.
+  warnings.warn('Lazy modules are a new feature under heavy development '
+Traceback (most recent call last):
+  File "C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\run_model.py", line 288, in <module>
+    app.run(main)
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\absl\app.py", line 312, in run
+    _run_main(main, args)
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\absl\app.py", line 258, in _run_main
+    sys.exit(main(argv))
+  File "C:\Users\Mark\iCloudDrive\master_arbeit\implementation\meshgraphnets\run_model.py", line 234, in main
+    wandb.watch(model, log_freq=100)
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\wandb\sdk\wandb_watch.py", line 89, in watch
+    wandb.run.history.torch.add_log_hooks_to_pytorch_module(
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\wandb\wandb_torch.py", line 135, in add_log_hooks_to_pytorch_module
+    self._hook_variable_gradient_stats(
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\wandb\wandb_torch.py", line 285, in _hook_variable_gradient_stats
+    handle = var.register_hook(lambda grad: _callback(grad, log_track))
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\torch\_tensor.py", line 287, in register_hook
+    return handle_torch_function(Tensor.register_hook, (self,), self, hook)
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\torch\overrides.py", line 1252, in handle_torch_function
+    result = overloaded_arg.__torch_function__(public_api, types, args, kwargs)
+  File "C:\Users\Mark\anaconda3\envs\tf2_mgn4\lib\site-packages\torch\nn\parameter.py", line 121, in __torch_function__
+    raise ValueError(
+ValueError: Attempted to use an uninitialized parameter in <function Tensor.register_hook at 0x0000016675E0DC10>. This error happens when you are using a `LazyModule` or explicitly manipulating `torch.nn.parameter.UninitializedParameter` objects. When using LazyModules Call `forward` with a dummy batch to initialize the parameters before calling torch functions

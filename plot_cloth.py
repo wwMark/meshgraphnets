@@ -43,7 +43,7 @@ def main(unused_argv):
   skip = 10
   num_steps = rollout_data[0]['gt_pos'].shape[1]
   # print()
-  num_frames = len(rollout_data) * num_steps // skip
+  num_frames = num_steps
 
   # compute bounds
   bounds = []
@@ -58,27 +58,18 @@ def main(unused_argv):
   def animate(num):
     step = (num*skip) % num_steps
     traj = (num*skip) // num_steps
+    # traj = num
+    step = num
     ax.cla()
     bound = bounds[traj]
-    '''
-    print("bounds")
-    print(bounds)
-    print("bound......")
-    print(bound)
-    print("bound[][]")
-    print(bound[0][0])
-    print(bound[1][0])
-    quit()
-    '''
+
     ax.set_xlim([bound[0][0], bound[1][0]])
     ax.set_ylim([bound[0][1], bound[1][1]])
     ax.set_zlim([bound[0][2], bound[1][2]])
 
-    # print("pos shape", rollout_data[traj]['pred_pos'].shape)
-    # print("squeeze pos shape", torch.squeeze(rollout_data[traj]['pred_pos'], dim=0).shape)
-    # print("step", step)
-    pos = torch.squeeze(rollout_data[traj]['pred_pos'], dim=0)[step].cpu().detach()
-    faces = torch.squeeze(rollout_data[traj]['faces'], dim=0)[step].cpu().detach()
+    pos = torch.squeeze(rollout_data[traj]['pred_pos'], dim=0)[step].to('cpu')
+    print(pos[10])
+    faces = torch.squeeze(rollout_data[traj]['faces'], dim=0)[step].to('cpu')
     ax.plot_trisurf(pos[:, 0], pos[:, 1], faces, pos[:, 2], shade=True)
     ax.set_title('Trajectory %d Step %d' % (traj, step))
     return fig,
