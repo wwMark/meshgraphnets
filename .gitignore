@@ -1,2 +1,7 @@
 __pycache__/
 .idea/
+checkpoint_dir/
+rollout/
+test/
+wandb/
+.gitignore
