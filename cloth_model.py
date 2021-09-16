@@ -43,18 +43,18 @@ class Model(nn.Module):
 
   def _build_graph(self, inputs, is_training):
     """Builds input graph."""
-    world_pos = torch.squeeze(inputs['world_pos'], dim=0)
-    prev_world_pos = torch.squeeze(inputs['prev|world_pos'], dim=0)
-    node_type = torch.squeeze(inputs['node_type'], dim=0)
+    world_pos = inputs['world_pos']
+    prev_world_pos = inputs['prev|world_pos']
+    node_type = inputs['node_type']
     velocity = world_pos - prev_world_pos
     node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE)
 
     node_features = torch.cat((velocity, node_type), dim=-1)
 
-    cells = torch.squeeze(inputs['cells'], dim=0)
+    cells = inputs['cells']
     senders, receivers = common.triangles_to_edges(cells)
 
-    mesh_pos = torch.squeeze(inputs['mesh_pos'], dim=0)
+    mesh_pos = inputs['mesh_pos']
     relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
                           torch.index_select(input=world_pos, dim=0, index=receivers))
     relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
@@ -91,8 +91,8 @@ class Model(nn.Module):
     # acceleration = self._output_normalizer.inverse(per_node_network_output)
     acceleration = per_node_network_output
     # integrate forward
-    cur_position = torch.squeeze(inputs['world_pos'], dim=0)
-    prev_position = torch.squeeze(inputs['prev|world_pos'], dim=0)
+    cur_position = inputs['world_pos']
+    prev_position = inputs['prev|world_pos']
     position = 2 * cur_position + acceleration - prev_position
     # print(position)
     return position

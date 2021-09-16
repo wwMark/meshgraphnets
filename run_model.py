@@ -31,7 +31,7 @@ import common
 import time
 import datetime
 
-host_system = 'linux'
+host_system = 'windows'
 start_datetime_global = None
 
 device = torch.device('cuda')
@@ -41,11 +41,13 @@ flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation.')
 flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
                   'Select model to run.')
+flags.DEFINE_enum('network', 'mgn', ['mgn', 'PyG_GCN'], 'Select network to train.')
+
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 1, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 1, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
 
 if host_system == 'windows':
     flags.DEFINE_string('dataset_dir',
@@ -101,6 +103,11 @@ PARAMETERS = {
 
 output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
 
+def squeeze_data_frame(data_frame):
+    for k, v in data_frame.items():
+        data_frame[k] = torch.squeeze(v, 0)
+    return data_frame
+
 
 def learner(params, model):
     # handles dataset preprocessing, model definition, training process definition and model training
@@ -138,6 +145,7 @@ def learner(params, model):
             data = next(ds_iterator)
             trajectory_loss = 0.0
             for data_frame_index, data_frame in enumerate(data):
+                data_frame = squeeze_data_frame(data_frame)
                 network_output = model(data_frame, is_training)
                 # print("        Finished", data_frame_index + 1, "frame.")
                 loss = loss_fn(data_frame, network_output)
@@ -169,9 +177,9 @@ def learner(params, model):
 def loss_fn(inputs, network_output):
     """L2 loss on position."""
     # build target acceleration
-    world_pos = torch.squeeze(inputs['world_pos'], dim=0)
-    prev_world_pos = torch.squeeze(inputs['prev|world_pos'], dim=0)
-    target_world_pos = torch.squeeze(inputs['target|world_pos'], dim=0)
+    world_pos = inputs['world_pos']
+    prev_world_pos = inputs['prev|world_pos']
+    target_world_pos = inputs['target|world_pos']
 
     cur_position = world_pos
     prev_position = prev_world_pos
@@ -180,7 +188,7 @@ def loss_fn(inputs, network_output):
     # target_normalized = output_normalizer(target_acceleration).to(device)
 
     # build loss
-    node_type = torch.squeeze(inputs['node_type'], dim=0)
+    node_type = inputs['node_type']
     loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
     # error = torch.sum((target_normalized - network_output) ** 2, dim=1)
     error = torch.sum((target_acceleration - network_output) ** 2, dim=1)
