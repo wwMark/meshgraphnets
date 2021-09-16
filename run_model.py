@@ -31,9 +31,7 @@ import common
 import time
 import datetime
 
-import wandb
-
-host_system = 'windows'
+host_system = 'linux'
 start_datetime_global = None
 
 device = torch.device('cuda')
@@ -45,9 +43,9 @@ flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
                   'Select model to run.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 1, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 1, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
 if host_system == 'windows':
     flags.DEFINE_string('dataset_dir',
@@ -73,10 +71,10 @@ if host_system == 'windows':
                         'Path to the checkpoint file of a network that should continue training')
 elif host_system == 'linux':
     flags.DEFINE_string('dataset_dir',
-                        '/home/i53/student/ruoheng_ma/mgn_tmp/data/flag_simple',
+                        '/home/i53/student/ruoheng_ma/mgn_tmp/data/flag_simple/',
                         'Directory to load dataset from.')
     flags.DEFINE_string('checkpoint_dir',
-                        '/home/i53/student/ruoheng_ma/mgn_tmp/windows_code_tmp/checkpoint_dir',
+                        '/home/i53/student/ruoheng_ma/mgn_tmp/windows_code_tmp/checkpoint_dir/',
                         'Directory to save checkpoint')
     flags.DEFINE_string('rollout_path',
                         '/home/i53/student/ruoheng_ma/mgn_tmp/windows_code_tmp/rollout/rollout.pkl',
@@ -155,7 +153,6 @@ def learner(params, model):
                        FLAGS.checkpoint_dir + "trajectory_optimizer_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth")
             torch.save(scheduler.state_dict(),
                        FLAGS.checkpoint_dir + "trajectory_scheduler_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth")
-            scheduler.step()
         torch.save(model.learned_model,
                    FLAGS.checkpoint_dir + "epoch_model_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth")
         torch.save(optimizer.state_dict(),
@@ -193,8 +190,6 @@ def loss_fn(inputs, network_output):
 
 def evaluator(params, model):
     """Run a model rollout trajectory."""
-    wandb.init()
-    wandb.watch(model)
     ds_loader = dataset.load_dataset(FLAGS.dataset_dir, FLAGS.rollout_split, add_targets=True)
     ds_iterator = iter(ds_loader)
     trajectories = []
@@ -208,8 +203,6 @@ def evaluator(params, model):
         l1_loss_fn = torch.nn.L1Loss()
         mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
         l1_loss = l1_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
-        wandb.log({'MSE_Loss': mse_loss})
-        wandb.log({'L1_Loss': l1_loss})
         print("    evaluation mse loss")
         print("   ", mse_loss)
         print("    evaluation l1 loss")
@@ -224,6 +217,7 @@ def main(argv):
     start = time.time()
     start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
     print("Program started at time", start_datetime)
+    global start_datetime_global
     start_datetime_global = start_datetime
     params = PARAMETERS[FLAGS.model]
 
