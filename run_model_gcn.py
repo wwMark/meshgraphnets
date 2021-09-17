@@ -28,6 +28,7 @@ import normalization
 import encode_process_decode
 import common
 import PyG_GCN
+from PyG_GCN import PyG_GCN
 
 import time
 import datetime
@@ -156,20 +157,20 @@ def learner(params, model):
                 optimizer.step()
             print("        trajectory_loss")
             print("       ", trajectory_loss)
-            torch.save(model.learned_model,
+            torch.save(model,
                        FLAGS.checkpoint_dir + "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth")
             torch.save(optimizer.state_dict(),
                        FLAGS.checkpoint_dir + "trajectory_optimizer_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth")
             torch.save(scheduler.state_dict(),
                        FLAGS.checkpoint_dir + "trajectory_scheduler_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth")
-        torch.save(model.learned_model,
+        torch.save(model,
                    FLAGS.checkpoint_dir + "epoch_model_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth")
         torch.save(optimizer.state_dict(),
                    FLAGS.checkpoint_dir + "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth")
         torch.save(scheduler.state_dict(),
                    FLAGS.checkpoint_dir + "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth")
         scheduler.step()
-    torch.save(model.learned_model, FLAGS.checkpoint_dir + "model_checkpoint.pth")
+    torch.save(model, FLAGS.checkpoint_dir + "model_checkpoint.pth")
     torch.save(optimizer.state_dict(), FLAGS.checkpoint_dir + "optimizer_checkpoint.pth")
     torch.save(scheduler.state_dict(), FLAGS.checkpoint_dir + "scheduler_checkpoint.pth")
     return model
@@ -291,15 +292,12 @@ def main(argv):
         print("Finished all......")
     elif FLAGS.mode == 'test_gcn':
         print("Start all of test_gcn......")
-        model = params['network'].Model()
+        model = PyG_GCN.Model()
         model.to(device)
         learner(params, model)
-        learned_model = torch.load(FLAGS.checkpoint_dir + "model_checkpoint.pth")
-        learned_model.to(device)
-        learned_model.eval()
-        model = params['model'].Model(params, learned_model, output_normalizer)
-        model.eval()
+        model = torch.load(FLAGS.checkpoint_dir + "model_checkpoint.pth")
         model.to(device)
+        model.eval()
         evaluator(params, model)
         print("Finished all......")
     end = time.time()

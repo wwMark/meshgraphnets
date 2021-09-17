@@ -71,6 +71,7 @@ class Model(nn.Module):
         features=edge_features,
         receivers=receivers,
         senders=senders)
+
     return encode_process_decode.MultiGraph(
         # node_features=self._node_normalizer(node_features, is_training),
         node_features=node_features,

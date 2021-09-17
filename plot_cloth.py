@@ -59,7 +59,7 @@ def main(unused_argv):
     step = (num*skip) % num_steps
     traj = (num*skip) // num_steps
     # traj = num
-    step = num
+    # step = num
     ax.cla()
     bound = bounds[traj]
 
