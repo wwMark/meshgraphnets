@@ -26,75 +26,80 @@ import encode_process_decode
 
 device = torch.device('cuda')
 
+
 class Model(nn.Module):
-  """Model for static cloth simulation."""
-  def __init__(self, params, model, output_normalizer):
-    super(Model, self).__init__()
-    self._params = params
-    # self._output_normalizer = normalization.Normalizer(
-    #    size=3, name='output_normalizer')
-    self._output_normalizer = output_normalizer
-    self._node_normalizer = normalization.Normalizer(
-        size=3+common.NodeType.SIZE, name='node_normalizer')
-    self._edge_normalizer = normalization.Normalizer(
-        size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
+    """Model for static cloth simulation."""
 
-    self.learned_model = model
+    def __init__(self, params, output_normalizer):
+        super(Model, self).__init__()
+        self._params = params
+        # self._output_normalizer = normalization.Normalizer(
+        #    size=3, name='output_normalizer')
+        self._output_normalizer = output_normalizer
+        self._node_normalizer = normalization.Normalizer(
+            size=3 + common.NodeType.SIZE, name='node_normalizer')
+        self._edge_normalizer = normalization.Normalizer(
+            size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
-  def _build_graph(self, inputs, is_training):
-    """Builds input graph."""
-    world_pos = inputs['world_pos']
-    prev_world_pos = inputs['prev|world_pos']
-    node_type = inputs['node_type']
-    velocity = world_pos - prev_world_pos
-    node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE)
+        self.learned_model = encode_process_decode.EncodeProcessDecode(
+            output_size=params['size'],
+            latent_size=128,
+            num_layers=2,
+            message_passing_steps=15)
+        self.learned_model.to(device)
 
-    node_features = torch.cat((velocity, node_type), dim=-1)
+    def _build_graph(self, inputs, is_training):
+        """Builds input graph."""
+        world_pos = inputs['world_pos']
+        prev_world_pos = inputs['prev|world_pos']
+        node_type = inputs['node_type']
+        velocity = world_pos - prev_world_pos
+        node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE)
 
-    cells = inputs['cells']
-    senders, receivers = common.triangles_to_edges(cells)
+        node_features = torch.cat((velocity, node_type), dim=-1)
 
-    mesh_pos = inputs['mesh_pos']
-    relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
-                          torch.index_select(input=world_pos, dim=0, index=receivers))
-    relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
-                         torch.index_select(mesh_pos, 0, receivers))
-    edge_features = torch.cat((
-        relative_world_pos,
-        torch.norm(relative_world_pos, dim=-1, keepdim=True),
-        relative_mesh_pos,
-        torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+        cells = inputs['cells']
+        senders, receivers = common.triangles_to_edges(cells)
 
-    mesh_edges = encode_process_decode.EdgeSet(
-        name='mesh_edges',
-        # features=self._edge_normalizer(edge_features, is_training),
-        features=edge_features,
-        receivers=receivers,
-        senders=senders)
+        mesh_pos = inputs['mesh_pos']
+        relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
+                              torch.index_select(input=world_pos, dim=0, index=receivers))
+        relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                             torch.index_select(mesh_pos, 0, receivers))
+        edge_features = torch.cat((
+            relative_world_pos,
+            torch.norm(relative_world_pos, dim=-1, keepdim=True),
+            relative_mesh_pos,
+            torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
 
-    return encode_process_decode.MultiGraph(
-        # node_features=self._node_normalizer(node_features, is_training),
-        node_features=node_features,
-        edge_sets=[mesh_edges])
+        mesh_edges = encode_process_decode.EdgeSet(
+            name='mesh_edges',
+            # features=self._edge_normalizer(edge_features, is_training),
+            features=edge_features,
+            receivers=receivers,
+            senders=senders)
 
-  def forward(self, inputs, is_training):
-    graph = self._build_graph(inputs, is_training=is_training)
-    if is_training:
-        return self.learned_model(graph)
-    else:
-        return self._update(inputs, self.learned_model(graph))
+        return encode_process_decode.MultiGraph(
+            # node_features=self._node_normalizer(node_features, is_training),
+            node_features=node_features,
+            edge_sets=[mesh_edges])
 
+    def forward(self, inputs, is_training):
+        graph = self._build_graph(inputs, is_training=is_training)
+        if is_training:
+            return self.learned_model(graph)
+        else:
+            return self._update(inputs, self.learned_model(graph))
 
-  def _update(self, inputs, per_node_network_output):
-    """Integrate model outputs."""
-    # return per_node_network_output
+    def _update(self, inputs, per_node_network_output):
+        """Integrate model outputs."""
+        # return per_node_network_output
 
-    # acceleration = self._output_normalizer.inverse(per_node_network_output)
-    acceleration = per_node_network_output
-    # integrate forward
-    cur_position = inputs['world_pos']
-    prev_position = inputs['prev|world_pos']
-    position = 2 * cur_position + acceleration - prev_position
-    # print(position)
-    return position
-
+        # acceleration = self._output_normalizer.inverse(per_node_network_output)
+        acceleration = per_node_network_output
+        # integrate forward
+        cur_position = inputs['world_pos']
+        prev_position = inputs['prev|world_pos']
+        position = 2 * cur_position + acceleration - prev_position
+        # print(position)
+        return position
