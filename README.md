@@ -1,27 +1,21 @@
-# Learning Mesh-Based Simulation with Graph Networks (ICLR 2021)
+# PyTorch version of Learning Mesh-Based Simulation with Graph Networks (ICLR 2021)
+
+Source repository: https://github.com/deepmind/deepmind-research/tree/master/meshgraphnets
 
 Video site: [sites.google.com/view/meshgraphnets](https://sites.google.com/view/meshgraphnets)
 
 Paper: [arxiv.org/abs/2010.03409](https://arxiv.org/abs/2010.03409)
 
-If you use the code here please cite this paper:
+## Overview
 
-    @inproceedings{pfaff2021learning,
-      title={Learning Mesh-Based Simulation with Graph Networks},
-      author={Tobias Pfaff and
-              Meire Fortunato and
-              Alvaro Sanchez-Gonzalez and
-              Peter W. Battaglia},
-      booktitle={International Conference on Learning Representations},
-      year={2021}
-    }
+The code in this repository is a PyTorch version of Learning Mesh-Based Simulation with Graph Networks. Currently, the code of **cloth simulation** can be
+run on both windows and linux. Development environment is PyCharm 2021.1.3. Package dependencies are defined
+in requirements.txt, please install all dependencies before runnning. The result of this version of MGN network is not 100% conform to the original code, please tune it according to your need. Other GNN networks code will be added to this repository in the future to explore the GNN performance for physical simulation.
 
 ## Setup
 
-Prepare environment, install dependencies:
+Install dependencies:
 
-    virtualenv --python=python3.6 "${ENV}"
-    ${ENV}/bin/activate
     pip install -r meshgraphnets/requirements.txt
 
 Download a dataset:
@@ -29,30 +23,24 @@ Download a dataset:
     mkdir -p ${DATA}
     bash meshgraphnets/download_dataset.sh flag_simple ${DATA}
 
+Configure running goals by setting the variables and flags variables at the beginning of run_model.py, which includes
+running mode (training/evaluation), model, epochs, saving path and etc.
+
 ## Running the model
 
-Train a model:
+Run the code after configurating the code:
 
-    python -m meshgraphnets.run_model --mode=train --model=cloth \
-        --checkpoint_dir=${DATA}/chk --dataset_dir=${DATA}/flag_simple
+    python run_model.py
 
-Generate some trajectory rollouts:
+Plot a trajectory (rollout.pkl path can be defined inside plot_cloth.py):
 
-    python -m meshgraphnets.run_model --mode=eval --model=cloth \
-        --checkpoint_dir=${DATA}/chk --dataset_dir=${DATA}/flag_simple \
-        --rollout_path=${DATA}/rollout_flag.pkl
-
-Plot a trajectory:
-
-    python -m meshgraphnets.plot_cloth --rollout_path=${DATA}/rollout_flag.pkl
+    python plot_cloth.py
 
 ## Datasets
 
-Datasets can be downloaded using the script `download_dataset.sh`. They contain
-a metadata file describing the available fields and their shape, and tfrecord
-datasets for train, valid and test splits.
-Dataset names match the naming in the paper.
-The following datasets are available:
+Datasets can be downloaded using the script `download_dataset.sh`. They contain a metadata file describing the available
+fields and their shape, and tfrecord datasets for train, valid and test splits. Dataset names match the naming in the
+paper. The following datasets are available:
 
     airfoil
     cylinder_flow
@@ -63,5 +51,4 @@ The following datasets are available:
     sphere_simple
     sphere_dynamic
 
-`flag_minimal` is a truncated version of flag_simple, and is only used for
-integration tests.
+`flag_minimal` is a truncated version of flag_simple, and is only used for integration tests.
