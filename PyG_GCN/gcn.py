@@ -15,7 +15,7 @@ device = torch.device('cuda')
 class Model(nn.Module):
     """Model for static cloth simulation."""
 
-    def __init__(self, in_channels=12, out_channels=3):
+    def __init__(self, params, normalizer, in_channels=12, out_channels=3):
         super(Model, self).__init__()
         self.gcn_conv1 = GCNConv(in_channels, out_channels)
         self.gcn_conv2 = GCNConv(out_channels, out_channels)
@@ -83,6 +83,16 @@ class Model(nn.Module):
         position = 2 * cur_position + acceleration - prev_position
         # print(position)
         return position
+
+    def save_model(self, path):
+        torch.save(self.state_dict(), path)
+
+    def load_model(self, path):
+        self.load_state_dict(torch.load(path))
+        self.to(device)
+
+    def evaluate(self):
+        self.eval()
 
 
 class GCNConv(MessagePassing):

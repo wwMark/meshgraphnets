@@ -27,14 +27,14 @@ import cloth_eval
 import cloth_model
 import dataset
 import normalization
-import encode_process_decode
 import common
-import PyG_GCN
 import logging
-from statistics import mean
 
 import time
 import datetime
+
+import PyG_GCN
+from PyG_GCN import gcn
 
 host_system = 'windows'
 start_datetime_global = None
@@ -44,15 +44,15 @@ device = torch.device('cuda')
 FLAGS = flags.FLAGS
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all', 'test_gcn'],
                   'Train model, or run evaluation.')
-flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
+flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'gcn'],
                   'Select model to run.')
 flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to train.')
 
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('epochs', 1, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 1, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
+flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
 
 if host_system == 'windows':
     flags.DEFINE_string('dataset_dir',
@@ -109,7 +109,9 @@ PARAMETERS = {
     # 'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
     #             size=2, batch=2, model=cfd_model, evaluator=cfd_eval),
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
-                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval)
+                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval),
+    'gcn': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
+                  size=3, batch=1, model=gcn, evaluator=cloth_eval),
 }
 
 output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
@@ -157,7 +159,9 @@ def learner(params, model):
         ds_iterator = iter(ds_loader)
         for trajectory_index in range(FLAGS.trajectories):
             if host_system == 'linux':
-                root_logger.info("    program started on " + start_datetime_global + ", now in Epoch" + str(epoch + 1) + "/" + str(FLAGS.epochs))
+                root_logger.info(
+                    "    program started on " + start_datetime_global + ", now in Epoch" + str(epoch + 1) + "/" + str(
+                        FLAGS.epochs))
             root_logger.info("    trajectory index " + str(trajectory_index + 1) + "/" + str(batches_in_dataset))
             data = next(ds_iterator)
             trajectory_loss = 0.0
@@ -172,9 +176,8 @@ def learner(params, model):
             epoch_training_loss += trajectory_loss
             root_logger.info("        trajectory_loss")
             root_logger.info("        " + str(trajectory_loss))
-            torch.save(model.learned_model,
-                       FLAGS.checkpoint_dir + "trajectory_model_checkpoint" + "_" + str(
-                           (trajectory_index + 1) % 2) + ".pth")
+            model.save_model(
+                FLAGS.checkpoint_dir + "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth")
             torch.save(optimizer.state_dict(),
                        FLAGS.checkpoint_dir + "trajectory_optimizer_checkpoint" + "_" + str(
                            (trajectory_index + 1) % 2) + ".pth")
@@ -185,14 +188,14 @@ def learner(params, model):
         epoch_training_losses.append(epoch_training_loss)
         root_logger.info("Current mean of epoch training losses")
         root_logger.info(torch.mean(torch.stack(epoch_training_losses)))
-        torch.save(model.learned_model,
-                   FLAGS.checkpoint_dir + "epoch_model_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth")
+        model.save_model(
+            FLAGS.checkpoint_dir + "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth")
         torch.save(optimizer.state_dict(),
                    FLAGS.checkpoint_dir + "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth")
         torch.save(scheduler.state_dict(),
                    FLAGS.checkpoint_dir + "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth")
         scheduler.step()
-    torch.save(model.learned_model, FLAGS.checkpoint_dir + "model_checkpoint.pth")
+    model.save_model(FLAGS.checkpoint_dir + "model_checkpoint.pth")
     torch.save(optimizer.state_dict(), FLAGS.checkpoint_dir + "optimizer_checkpoint.pth")
     torch.save(scheduler.state_dict(), FLAGS.checkpoint_dir + "scheduler_checkpoint.pth")
     return model
@@ -258,7 +261,8 @@ def main(argv):
     start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
     start_datetime_dash = start_datetime.replace(" ", "-").replace(":", "-")
 
-    log_path = FLAGS.logging_dir + start_datetime_dash + "_" + FLAGS.mode + "_epoch" + str(FLAGS.epochs) + "_trajectory" + str(FLAGS.trajectories) + "_rollout" + str(FLAGS.num_rollouts) + ".log"
+    log_path = FLAGS.logging_dir + start_datetime_dash + "_" + FLAGS.mode + "_epoch" + str(
+        FLAGS.epochs) + "_trajectory" + str(FLAGS.trajectories) + "_rollout" + str(FLAGS.num_rollouts) + ".log"
     # logging.basicConfig(encoding='utf-8', level=logging.INFO)
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
@@ -290,21 +294,12 @@ def main(argv):
         root_logger.info("Finished training......")
     elif FLAGS.mode == 'eval':
         root_logger.info("Start evaluating......")
-        learned_model = torch.load(FLAGS.checkpoint_dir + "model_checkpoint.pth")
-        learned_model.to(device)
-        learned_model.eval()
-        model = params['model'].Model(params, learned_model, output_normalizer)
+        model = params['model'].Model(params, output_normalizer)
+        model.load_model(FLAGS.checkpoint_dir + "model_checkpoint.pth")
+        model.evaluate()
         model.to(device)
         model.eval()
         evaluator(params, model)
-        '''
-        prefix = "learned_model."
-        n_clip = len(prefix)
-        adapted_dict = {k[n_clip]: v for k, v in torch.load(FLAGS.checkpoint_dir).items() if k.startswith(prefix)}
-        model.load_state_dict(adapted_dict)
-        model.eval()
-        evaluator(params, model)
-        '''
         root_logger.info("Finished evaluating......")
     elif FLAGS.mode == 'all':
         root_logger.info("Start all......")
@@ -317,28 +312,25 @@ def main(argv):
         learner(params, model)
         root_logger.info("Finished training......")
         root_logger.info("Start evaluating......")
-        learned_model = torch.load(FLAGS.checkpoint_dir + "model_checkpoint.pth")
-        learned_model.to(device)
-        learned_model.eval()
-        model = params['model'].Model(params, learned_model, output_normalizer)
-        model.eval()
+        model = params['model'].Model(params, output_normalizer)
+        model.load_model(FLAGS.checkpoint_dir + "model_checkpoint.pth")
+        model.evaluate()
         model.to(device)
+        model.eval()
         evaluator(params, model)
         root_logger.info("Finished evaluating......")
         root_logger.info("Finished all......")
     elif FLAGS.mode == 'test_gcn':
-        root_logger.info("Start all of test_gcn......")
-        model = params['network'].Model()
+        print("Start all of test_gcn......")
+        model = PyG_GCN.Model()
         model.to(device)
         learner(params, model)
-        learned_model = torch.load(FLAGS.checkpoint_dir + "model_checkpoint.pth")
-        learned_model.to(device)
-        learned_model.eval()
-        model = params['model'].Model(params, learned_model, output_normalizer)
-        model.eval()
+        model = PyG_GCN.Model()
+        model.load_model(FLAGS.checkpoint_dir + "model_checkpoint.pth")
         model.to(device)
+        model.evaluate()
         evaluator(params, model)
-        root_logger.info("Finished all......")
+        print("Finished all......")
     end = time.time()
     end_datetime = datetime.datetime.fromtimestamp(end).strftime('%c')
     root_logger.info("Program ended at time " + end_datetime)

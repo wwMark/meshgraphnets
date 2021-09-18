@@ -103,3 +103,13 @@ class Model(nn.Module):
         position = 2 * cur_position + acceleration - prev_position
         # print(position)
         return position
+
+    def save_model(self, path):
+        torch.save(self.learned_model, path)
+
+    def load_model(self, path):
+        self.learned_model = torch.load(path)
+        self.learned_model.to(device)
+
+    def evaluate(self):
+        self.learned_model.eval()
