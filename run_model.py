@@ -39,8 +39,6 @@ import datetime
 import PyG_GCN
 from PyG_GCN import gcn
 
-host_system = 'windows'
-
 device = torch.device('cuda')
 
 FLAGS = flags.FLAGS
@@ -67,56 +65,30 @@ output_dir = os.path.join(root_dir, 'output')
 run_dir = os.path.join(output_dir, start_datetime_dash)
 Path(run_dir).mkdir(parents=True, exist_ok=True)
 
-if host_system == 'windows':
-    flags.DEFINE_string('dataset_dir',
-                        dataset_dir,
-                        'Directory to load dataset from.')
-    flags.DEFINE_string('checkpoint_dir',
-                        os.path.join(run_dir, 'checkpoint_dir'),
-                        'Directory to save checkpoint')
-    flags.DEFINE_string('rollout_path',
-                        os.path.join(run_dir, 'rollout', 'rollout.pkl'),
-                        'Pickle file to save eval trajectories')
-    flags.DEFINE_string('logging_dir',
-                        os.path.join(run_dir, 'logs'),
-                        'Log file directory')
-    flags.DEFINE_string('model_last_checkpoint_file',
-                        None,
-                        # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth',
-                        'Path to the checkpoint file of a network that should continue training')
-    flags.DEFINE_string('optimizer_last_checkpoint_file',
-                        None,
-                        # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth',
-                        'Path to the checkpoint file of a network that should continue training')
-    flags.DEFINE_string('last_checkpoint_file',
-                        None,
-                        # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth',
-                        'Path to the checkpoint file of a network that should continue training')
-elif host_system == 'linux':
-    flags.DEFINE_string('dataset_dir',
-                        '/home/i53/student/ruoheng_ma/mgn_tmp/data/flag_simple/',
-                        'Directory to load dataset from.')
-    flags.DEFINE_string('checkpoint_dir',
-                        '/home/i53/student/ruoheng_ma/mgn_tmp/windows_code_tmp/checkpoint_dir/',
-                        'Directory to save checkpoint')
-    flags.DEFINE_string('rollout_path',
-                        '/home/i53/student/ruoheng_ma/mgn_tmp/windows_code_tmp/rollout/rollout.pkl',
-                        'Pickle file to save eval trajectories')
-    flags.DEFINE_string('logging_dir',
-                        None,
-                        'Log file directory')
-    flags.DEFINE_string('model_last_checkpoint_file',
-                        None,
-                        # '/home/i53/student/ruoheng_ma/mgn_tmp/windows_code_tmp/checkpoint_dir/checkpoint.pth',
-                        'Path to the checkpoint file of a network that should continue training')
-    flags.DEFINE_string('optimizer_last_checkpoint_file',
-                        None,
-                        # '/home/i53/student/ruoheng_ma/mgn_tmp/windows_code_tmp/checkpoint_dir/checkpoint.pth',
-                        'Path to the checkpoint file of a network that should continue training')
-    flags.DEFINE_string('last_checkpoint_file',
-                        None,
-                        # '/home/i53/student/ruoheng_ma/mgn_tmp/windows_code_tmp/checkpoint_dir/checkpoint.pth',
-                        'Path to the checkpoint file of a network that should continue training')
+flags.DEFINE_string('dataset_dir',
+                    dataset_dir,
+                    'Directory to load dataset from.')
+flags.DEFINE_string('checkpoint_dir',
+                    os.path.join(run_dir, 'checkpoint_dir'),
+                    'Directory to save checkpoint')
+flags.DEFINE_string('rollout_path',
+                    os.path.join(run_dir, 'rollout', 'rollout.pkl'),
+                    'Pickle file to save eval trajectories')
+flags.DEFINE_string('logging_dir',
+                    os.path.join(run_dir, 'logs'),
+                    'Log file directory')
+flags.DEFINE_string('model_last_checkpoint_file',
+                    None,
+                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth',
+                    'Path to the checkpoint file of a network that should continue training')
+flags.DEFINE_string('optimizer_last_checkpoint_file',
+                    None,
+                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth',
+                    'Path to the checkpoint file of a network that should continue training')
+flags.DEFINE_string('last_checkpoint_file',
+                    None,
+                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth',
+                    'Path to the checkpoint file of a network that should continue training')
 
 PARAMETERS = {
     # 'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
@@ -171,10 +143,6 @@ def learner(params, model):
         epoch_training_loss = 0.0
         ds_iterator = iter(ds_loader)
         for trajectory_index in range(FLAGS.trajectories):
-            if host_system == 'linux':
-                root_logger.info(
-                    "    program started on " + start_datetime + ", now in Epoch" + str(epoch + 1) + "/" + str(
-                        FLAGS.epochs))
             root_logger.info("    trajectory index " + str(trajectory_index + 1) + "/" + str(batches_in_dataset))
             data = next(ds_iterator)
             trajectory_loss = 0.0
