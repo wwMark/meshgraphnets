@@ -27,14 +27,15 @@ set -x
 # Install dependencies.
 # pip install --upgrade -r meshgraphnets/requirements.txt
 
+ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 # Download minimal dataset
-# DATA_DIR="${TMP_DIR}/flag_minimal"
-# bash meshgraphnets/download_dataset.sh flag_minimal ${TMP_DIR}
+DATA_DIR="${ROOT_DIR}/data/flag_simple"
+mkdir -p ${DATA_DIR}
+bash download_dataset.sh flag_simple ${DATA_DIR}
 
 # Train for a few steps.
-CHK_DIR='/home/mark/master_arbeit/mgn_dataset/chk'
-DATA_DIR='/home/mark/master_arbeit/mgn_dataset/flag_simple/'
-python -m meshgraphnets.run_model --model=cloth --mode=train --checkpoint_dir=${CHK_DIR} --dataset_dir=${DATA_DIR} --num_training_steps=1000
+python run_model.py
+python plot_cloth.py
 
 # Generate a rollout trajectory
 # ROLLOUT_PATH="${TMP_DIR}/rollout.pkl"
