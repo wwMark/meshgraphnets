@@ -112,4 +112,5 @@ class Model(nn.Module):
         self.learned_model.to(device)
 
     def evaluate(self):
+        self.eval()
         self.learned_model.eval()

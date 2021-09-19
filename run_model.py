@@ -16,6 +16,9 @@
 # ============================================================================
 """Runs the learner/evaluator."""
 import sys
+import os
+import pathlib
+from pathlib import Path
 
 import pickle
 from absl import app
@@ -37,7 +40,6 @@ import PyG_GCN
 from PyG_GCN import gcn
 
 host_system = 'windows'
-start_datetime_global = None
 
 device = torch.device('cuda')
 
@@ -50,22 +52,33 @@ flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to t
 
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 1, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 1, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 4, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 5, 'No. of rollout trajectories')
+
+start = time.time()
+start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
+start_datetime_dash = start_datetime.replace(" ", "-").replace(":", "-")
+
+root_dir = pathlib.Path(__file__).parent.resolve()
+dataset_name = 'flag_simple'
+dataset_dir = os.path.join(root_dir, 'data', dataset_name)
+output_dir = os.path.join(root_dir, 'output')
+run_dir = os.path.join(output_dir, start_datetime_dash)
+Path(run_dir).mkdir(parents=True, exist_ok=True)
 
 if host_system == 'windows':
     flags.DEFINE_string('dataset_dir',
-                        'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\deepmind-research\\meshgraphnets\\data\\flag_simple\\',
+                        dataset_dir,
                         'Directory to load dataset from.')
     flags.DEFINE_string('checkpoint_dir',
-                        'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\',
+                        os.path.join(run_dir, 'checkpoint_dir'),
                         'Directory to save checkpoint')
     flags.DEFINE_string('rollout_path',
-                        'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\rollout\\rollout.pkl',
+                        os.path.join(run_dir, 'rollout', 'rollout.pkl'),
                         'Pickle file to save eval trajectories')
     flags.DEFINE_string('logging_dir',
-                        'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\logs\\',
+                        os.path.join(run_dir, 'logs'),
                         'Log file directory')
     flags.DEFINE_string('model_last_checkpoint_file',
                         None,
@@ -111,7 +124,7 @@ PARAMETERS = {
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
                   size=3, batch=1, model=cloth_model, evaluator=cloth_eval),
     'gcn': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
-                  size=3, batch=1, model=gcn, evaluator=cloth_eval),
+                size=3, batch=1, model=gcn, evaluator=cloth_eval),
 }
 
 output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
@@ -160,7 +173,7 @@ def learner(params, model):
         for trajectory_index in range(FLAGS.trajectories):
             if host_system == 'linux':
                 root_logger.info(
-                    "    program started on " + start_datetime_global + ", now in Epoch" + str(epoch + 1) + "/" + str(
+                    "    program started on " + start_datetime + ", now in Epoch" + str(epoch + 1) + "/" + str(
                         FLAGS.epochs))
             root_logger.info("    trajectory index " + str(trajectory_index + 1) + "/" + str(batches_in_dataset))
             data = next(ds_iterator)
@@ -189,15 +202,15 @@ def learner(params, model):
         root_logger.info("Current mean of epoch training losses")
         root_logger.info(torch.mean(torch.stack(epoch_training_losses)))
         model.save_model(
-            FLAGS.checkpoint_dir + "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth")
+            os.path.join(FLAGS.checkpoint_dir, "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth"))
         torch.save(optimizer.state_dict(),
-                   FLAGS.checkpoint_dir + "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth")
+                   os.path.join(FLAGS.checkpoint_dir, "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         torch.save(scheduler.state_dict(),
-                   FLAGS.checkpoint_dir + "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth")
+                   os.path.join(FLAGS.checkpoint_dir, "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         scheduler.step()
-    model.save_model(FLAGS.checkpoint_dir + "model_checkpoint.pth")
-    torch.save(optimizer.state_dict(), FLAGS.checkpoint_dir + "optimizer_checkpoint.pth")
-    torch.save(scheduler.state_dict(), FLAGS.checkpoint_dir + "scheduler_checkpoint.pth")
+    model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint.pth"))
+    torch.save(optimizer.state_dict(), os.path.join(FLAGS.checkpoint_dir, "optimizer_checkpoint.pth"))
+    torch.save(scheduler.state_dict(), os.path.join(FLAGS.checkpoint_dir, "scheduler_checkpoint.pth"))
     return model
 
 
@@ -257,13 +270,12 @@ def evaluator(params, model):
 
 
 def main(argv):
-    start = time.time()
-    start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
-    start_datetime_dash = start_datetime.replace(" ", "-").replace(":", "-")
-
-    log_path = FLAGS.logging_dir + start_datetime_dash + "_" + FLAGS.mode + "_epoch" + str(
-        FLAGS.epochs) + "_trajectory" + str(FLAGS.trajectories) + "_rollout" + str(FLAGS.num_rollouts) + ".log"
-    # logging.basicConfig(encoding='utf-8', level=logging.INFO)
+    run_config_record = FLAGS.mode + "_epoch" + str(FLAGS.epochs) + "_trajectory" + str(FLAGS.trajectories) + "_rollout" + str(FLAGS.num_rollouts)
+    Path(os.path.join(run_dir, run_config_record)).touch()
+    Path(FLAGS.logging_dir).mkdir(parents=True, exist_ok=True)
+    Path(FLAGS.checkpoint_dir).mkdir(parents=True, exist_ok=True)
+    Path(Path(FLAGS.rollout_path).parent.absolute()).mkdir(parents=True, exist_ok=True)
+    log_path = os.path.join(FLAGS.logging_dir, "log.log")
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
     console_output_handler = logging.StreamHandler(sys.stdout)
@@ -276,13 +288,10 @@ def main(argv):
     root_logger.addHandler(console_output_handler)
     root_logger.addHandler(file_log_handler)
 
-    # print("Program started at time", start_datetime)
     root_logger.info("Program started at time " + str(start_datetime))
-    global start_datetime_global
-    start_datetime_global = start_datetime
     params = PARAMETERS[FLAGS.model]
 
-    if FLAGS.mode == 'train':
+    if FLAGS.mode == 'train' or FLAGS.mode == 'all':
         root_logger.info("Start training......")
         if FLAGS.model_last_checkpoint_file is not None:
             root_logger.info("Loaded checkpoint file", FLAGS.model_last_checkpoint_file)
@@ -292,35 +301,16 @@ def main(argv):
         model.to(device)
         learner(params, model)
         root_logger.info("Finished training......")
-    elif FLAGS.mode == 'eval':
+    if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         root_logger.info("Start evaluating......")
         model = params['model'].Model(params, output_normalizer)
-        model.load_model(FLAGS.checkpoint_dir + "model_checkpoint.pth")
+        model.load_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint.pth"))
         model.evaluate()
         model.to(device)
         model.eval()
         evaluator(params, model)
         root_logger.info("Finished evaluating......")
-    elif FLAGS.mode == 'all':
-        root_logger.info("Start all......")
-        root_logger.info("Start training......")
-        if FLAGS.model_last_checkpoint_file is not None:
-            learned_model = torch.load(FLAGS.checkpoint_dir + "model_checkpoint.pth")
-            learned_model.to(device)
-        model = params['model'].Model(params, output_normalizer)
-        model.to(device)
-        learner(params, model)
-        root_logger.info("Finished training......")
-        root_logger.info("Start evaluating......")
-        model = params['model'].Model(params, output_normalizer)
-        model.load_model(FLAGS.checkpoint_dir + "model_checkpoint.pth")
-        model.evaluate()
-        model.to(device)
-        model.eval()
-        evaluator(params, model)
-        root_logger.info("Finished evaluating......")
-        root_logger.info("Finished all......")
-    elif FLAGS.mode == 'test_gcn':
+    if FLAGS.mode == 'test_gcn':
         print("Start all of test_gcn......")
         model = PyG_GCN.Model()
         model.to(device)
