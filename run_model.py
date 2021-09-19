@@ -52,9 +52,9 @@ flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to t
 
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 4, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 5, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 1, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 1, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
@@ -190,19 +190,19 @@ def learner(params, model):
             root_logger.info("        trajectory_loss")
             root_logger.info("        " + str(trajectory_loss))
             model.save_model(
-                FLAGS.checkpoint_dir + "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth")
+                os.path.join(FLAGS.checkpoint_dir,
+                             "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth"))
             torch.save(optimizer.state_dict(),
-                       FLAGS.checkpoint_dir + "trajectory_optimizer_checkpoint" + "_" + str(
-                           (trajectory_index + 1) % 2) + ".pth")
+                       os.path.join(FLAGS.checkpoint_dir,
+                                    "trajectory_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
             torch.save(scheduler.state_dict(),
-                       FLAGS.checkpoint_dir + "trajectory_scheduler_checkpoint" + "_" + str(
-                           (trajectory_index + 1) % 2) + ".pth")
-        epoch_training_loss = epoch_training_loss
+                       os.path.join(FLAGS.checkpoint_dir,
+                                    "trajectory_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         epoch_training_losses.append(epoch_training_loss)
         root_logger.info("Current mean of epoch training losses")
         root_logger.info(torch.mean(torch.stack(epoch_training_losses)))
         model.save_model(
-            os.path.join(FLAGS.checkpoint_dir, "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth"))
+            os.path.join(FLAGS.checkpoint_dir, "epoch_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth"))
         torch.save(optimizer.state_dict(),
                    os.path.join(FLAGS.checkpoint_dir, "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         torch.save(scheduler.state_dict(),
@@ -211,8 +211,11 @@ def learner(params, model):
     model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint.pth"))
     torch.save(optimizer.state_dict(), os.path.join(FLAGS.checkpoint_dir, "optimizer_checkpoint.pth"))
     torch.save(scheduler.state_dict(), os.path.join(FLAGS.checkpoint_dir, "scheduler_checkpoint.pth"))
-    return model
-
+    loss_record = {}
+    loss_record['train_total_loss'] = torch.sum(torch.stack(epoch_training_losses))
+    loss_record['train_mean_epoch_loss'] = torch.sum(torch.stack(epoch_training_losses))
+    loss_record['train_epoch_losses'] = epoch_training_losses
+    return loss_record
 
 def loss_fn(inputs, network_output):
     """L2 loss on position."""
@@ -267,6 +270,14 @@ def evaluator(params, model):
     root_logger.info(torch.mean(torch.stack(l1_losses)))
     with open(FLAGS.rollout_path, 'wb') as fp:
         pickle.dump(trajectories, fp)
+    loss_record = {}
+    loss_record['eval_total_mse_loss'] = torch.sum(torch.stack(mse_losses))
+    loss_record['eval_total_l1_loss'] = torch.sum(torch.stack(l1_losses))
+    loss_record['eval_mean_mse_loss'] = torch.sum(torch.stack(mse_losses))
+    loss_record['eval_mean_l1_loss'] = torch.sum(torch.stack(l1_losses))
+    loss_record['eval_mse_losses'] = mse_losses
+    loss_record['eval_l1_losses'] = l1_losses
+    return loss_record
 
 
 def main(argv):
@@ -299,7 +310,7 @@ def main(argv):
             learned_model.to(device)
         model = params['model'].Model(params, output_normalizer)
         model.to(device)
-        learner(params, model)
+        train_loss_record = learner(params, model)
         root_logger.info("Finished training......")
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         root_logger.info("Start evaluating......")
@@ -308,7 +319,7 @@ def main(argv):
         model.evaluate()
         model.to(device)
         model.eval()
-        evaluator(params, model)
+        eval_loss_record = evaluator(params, model)
         root_logger.info("Finished evaluating......")
     if FLAGS.mode == 'test_gcn':
         print("Start all of test_gcn......")
@@ -328,6 +339,14 @@ def main(argv):
     elapsed_time_in_second = end - start
     elapsed_time = str(datetime.timedelta(seconds=elapsed_time_in_second))
     root_logger.info("Elapsed time " + elapsed_time)
+    root_logger.info("--------------------train loss record--------------------")
+    for item in train_loss_record.items():
+        root_logger.info(item)
+    root_logger.info("---------------------------------------------------------")
+    root_logger.info("--------------------eval loss record---------------------")
+    for item in eval_loss_record.items():
+        root_logger.info(item)
+    root_logger.info("---------------------------------------------------------")
 
 
 if __name__ == '__main__':
