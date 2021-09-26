@@ -75,7 +75,7 @@ def _rollout(model, initial_state, num_steps):
 def evaluate(model, trajectory):
     """Performs model rollouts and create stats."""
     initial_state = {k: torch.squeeze(v, 0)[0] for k, v in trajectory.items()}
-    num_steps = trajectory['cells'][0].shape[0]
+    num_steps = trajectory['cells'].shape[0]
     prediction = _rollout(model, initial_state, num_steps)
 
     # error = tf.reduce_mean((prediction - trajectory['world_pos'])**2, axis=-1)

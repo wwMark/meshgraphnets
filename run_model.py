@@ -33,6 +33,10 @@ import normalization
 import common
 import logging
 
+import numpy as np
+import json
+from common import NodeType
+
 import time
 import datetime
 
@@ -50,9 +54,9 @@ flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to t
 
 flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 5, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
@@ -100,13 +104,117 @@ PARAMETERS = {
 }
 
 output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
-
+loaded_meta = False
+shapes = {}
+dtypes = {}
+types = {}
 
 def squeeze_data_frame(data_frame):
     for k, v in data_frame.items():
         data_frame[k] = torch.squeeze(v, 0)
     return data_frame
 
+def add_targets():
+    """Adds target and optionally history fields to dataframe."""
+    fields = 'world_pos'
+    add_history = True
+
+    def fn(trajectory):
+        out = {}
+        for key, val in trajectory.items():
+            out[key] = val[1:-1]
+            if key in fields:
+                if add_history:
+                    out['prev|' + key] = val[0:-2]
+                out['target|' + key] = val[2:]
+        return out
+
+    return fn
+
+def split_and_preprocess():
+    """Splits trajectories into frames, and adds training noise."""
+    noise_field = 'world_pos'
+    noise_scale = 0.003
+    noise_gamma = 0.1
+
+    def add_noise(frame):
+        zero_size = torch.zeros(frame[noise_field].size(), dtype=torch.float32).to(device)
+        noise = torch.normal(zero_size, std=noise_scale).to(device)
+        other = torch.Tensor([NodeType.NORMAL.value]).to(device)
+        mask = torch.eq(frame['node_type'], other.int())[:, 0]
+        mask = torch.stack((mask, mask, mask), dim=1)
+        noise = torch.where(mask, noise, torch.zeros_like(noise))
+        frame[noise_field] += noise
+        frame['target|' + noise_field] += (1.0 - noise_gamma) * noise
+        return frame
+
+    def element_operation(trajectory):
+        world_pos = trajectory['world_pos']
+        mesh_pos = trajectory['mesh_pos']
+        node_type = trajectory['node_type']
+        cells = trajectory['cells']
+        target_world_pos = trajectory['target|world_pos']
+        prev_world_pos = trajectory['prev|world_pos']
+        trajectory_steps = []
+        for i in range(399):
+            wp = world_pos[i]
+            mp = mesh_pos[i]
+            twp = target_world_pos[i]
+            nt = node_type[i]
+            c = cells[i]
+            pwp = prev_world_pos[i]
+            trajectory_step = {'world_pos': wp, 'mesh_pos': mp, 'node_type': nt, 'cells': c,
+                               'target|world_pos': twp, 'prev|world_pos': pwp}
+            noisy_trajectory_step = add_noise(trajectory_step)
+            trajectory_steps.append(noisy_trajectory_step)
+        return trajectory_steps
+    return element_operation
+
+def process_trajectory(trajectory_data, add_targets_bool=False, split_and_preprocess_bool=False):
+    global loaded_meta
+    global shapes
+    global dtypes
+    global types
+    if not loaded_meta:
+        try:
+            with open(os.path.join(FLAGS.dataset_dir, 'meta.json'), 'r') as fp:
+                meta = json.loads(fp.read())
+            shapes = {}
+            dtypes = {}
+            types = {}
+            for key, field in meta['features'].items():
+                shapes[key] = field['shape']
+                dtypes[key] = field['dtype']
+                types[key] = field['type']
+        except FileNotFoundError as e:
+            print(e)
+            quit()
+    trajectory = {}
+    # decode bytes into corresponding dtypes
+    for key, value in trajectory_data.items():
+        raw_data = value.numpy().tobytes()
+        mature_data = np.frombuffer(raw_data, dtype=getattr(np, dtypes[key]))
+        mature_data = torch.from_numpy(mature_data).to(device)
+        reshaped_data = torch.reshape(mature_data, shapes[key])
+        if types[key] == 'static':
+            reshaped_data = torch.tile(reshaped_data, (meta['trajectory_length'], 1, 1))
+        elif types[key] == 'dynamic_varlen':
+            pass
+        elif types[key] != 'dynamic':
+            raise ValueError('invalid data format')
+        trajectory[key] = reshaped_data
+
+    '''
+    if self.add_targets is not None:
+        trajectory = self.add_targets(trajectory)
+    if self.split_and_preprocess is not None:
+        trajectory = self.split_and_preprocess(trajectory)
+    '''
+    if add_targets_bool:
+        trajectory = add_targets()(trajectory)
+    if split_and_preprocess_bool:
+        trajectory = split_and_preprocess()(trajectory)
+    return trajectory
 
 def learner(params, model):
     # handles dataset preprocessing, model definition, training process definition and model training
@@ -144,9 +252,10 @@ def learner(params, model):
         ds_iterator = iter(ds_loader)
         for trajectory_index in range(FLAGS.trajectories):
             root_logger.info("    trajectory index " + str(trajectory_index + 1) + "/" + str(FLAGS.trajectories))
-            data = next(ds_iterator)
+            trajectory = next(ds_iterator)
+            trajectory = process_trajectory(trajectory, True, True)
             trajectory_loss = 0.0
-            for data_frame_index, data_frame in enumerate(data):
+            for data_frame_index, data_frame in enumerate(trajectory):
                 count += 1
                 data_frame = squeeze_data_frame(data_frame)
                 network_output = model(data_frame, is_training)
@@ -221,6 +330,7 @@ def evaluator(params, model):
     for index in range(FLAGS.num_rollouts):
         root_logger.info("Evaluating trajectory " + str(index + 1))
         trajectory = next(ds_iterator)
+        trajectory = process_trajectory(trajectory, True)
         _, prediction_trajectory = params['evaluator'].evaluate(model, trajectory)
         mse_loss_fn = torch.nn.MSELoss()
         l1_loss_fn = torch.nn.L1Loss()

@@ -22,7 +22,7 @@ import os
 from numpy.lib.function_base import i0
 cwd = os.getcwd()
 sys.path.append(cwd + "/meshgraphnets/migration_utilities/")
-
+from migration_utilities.flag_simple_torch_dataset import FlagSimpleDatasetIterative
 import functools
 import json
 # import flag_simple_torch_dataset
@@ -111,7 +111,7 @@ def collate_fn(data_list):
 def load_dataset(path, split, add_targets=False, split_and_preprocess=False, batch_size=1, prefetch_factor=2):
   # DataLoader(FlagSimpleDataset(path='../../../mgn_dataset/flag_simple/', split='train'), batch_size=1)
   # return DataLoader(FlagSimpleDataset(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, shuffle=True, num_workers=1)
-  return DataLoader(FlagSimpleDataset(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, prefetch_factor=prefetch_factor, shuffle=False, num_workers=0)# , collate_fn=collate_fn)
+  return DataLoader(FlagSimpleDatasetIterative(path=path, split=split, add_targets=add_targets, split_and_preprocess=split_and_preprocess), batch_size=batch_size, prefetch_factor=prefetch_factor, shuffle=False, num_workers=0)# , collate_fn=collate_fn)
 
 def batch_dataset(ds, batch_size):
   """Batches input datasets."""
