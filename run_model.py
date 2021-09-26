@@ -48,11 +48,11 @@ flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'gcn'],
                   'Select model to run.')
 flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to train.')
 
-flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
+flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 1, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 1, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 5, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
@@ -127,29 +127,32 @@ def learner(params, model):
     # then networks will be initialized
 
     # training process definition
-
-    optimizer = torch.optim.Adam(model.parameters(recurse=True), lr=1e-4)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.8, last_epoch=-1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.1 + 1e-6, last_epoch=-1)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.1 + 1e-6, last_epoch=-1)
 
     # model training
     is_training = True
-    batches_in_dataset = 1000 // batch_size
 
     epoch_training_losses = []
 
+    count = 0
     for epoch in range(FLAGS.epochs):
         # every time when model.train is called, model will train itself with the whole dataset
         root_logger.info("Epoch " + str(epoch + 1) + "/" + str(FLAGS.epochs))
         epoch_training_loss = 0.0
         ds_iterator = iter(ds_loader)
         for trajectory_index in range(FLAGS.trajectories):
-            root_logger.info("    trajectory index " + str(trajectory_index + 1) + "/" + str(batches_in_dataset))
+            root_logger.info("    trajectory index " + str(trajectory_index + 1) + "/" + str(FLAGS.trajectories))
             data = next(ds_iterator)
             trajectory_loss = 0.0
             for data_frame_index, data_frame in enumerate(data):
+                count += 1
                 data_frame = squeeze_data_frame(data_frame)
                 network_output = model(data_frame, is_training)
                 loss = loss_fn(data_frame, network_output)
+                if count % 1000 == 0:
+                    print("1000 step loss", loss)
                 trajectory_loss += loss
                 optimizer.zero_grad()
                 loss.backward()
@@ -175,7 +178,8 @@ def learner(params, model):
                    os.path.join(FLAGS.checkpoint_dir, "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         torch.save(scheduler.state_dict(),
                    os.path.join(FLAGS.checkpoint_dir, "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
-        scheduler.step()
+        if epoch == (FLAGS.epochs // 2):
+            scheduler.step()
     model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint.pth"))
     torch.save(optimizer.state_dict(), os.path.join(FLAGS.checkpoint_dir, "optimizer_checkpoint.pth"))
     torch.save(scheduler.state_dict(), os.path.join(FLAGS.checkpoint_dir, "scheduler_checkpoint.pth"))
@@ -196,16 +200,14 @@ def loss_fn(inputs, network_output):
     prev_position = prev_world_pos
     target_position = target_world_pos
     target_acceleration = target_position - 2 * cur_position + prev_position
-    # target_normalized = output_normalizer(target_acceleration).to(device)
+    target_normalized = output_normalizer(target_acceleration).to(device)
 
     # build loss
     node_type = inputs['node_type']
     loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
-    # error = torch.sum((target_normalized - network_output) ** 2, dim=1)
-    error = torch.sum((target_acceleration - network_output) ** 2, dim=1)
+    error = torch.sum((target_normalized - network_output) ** 2, dim=1)
     loss = torch.mean(error[loss_mask])
     return loss
-
 
 def evaluator(params, model):
     root_logger = logging.getLogger()
@@ -241,8 +243,8 @@ def evaluator(params, model):
     loss_record = {}
     loss_record['eval_total_mse_loss'] = torch.sum(torch.stack(mse_losses))
     loss_record['eval_total_l1_loss'] = torch.sum(torch.stack(l1_losses))
-    loss_record['eval_mean_mse_loss'] = torch.sum(torch.stack(mse_losses))
-    loss_record['eval_mean_l1_loss'] = torch.sum(torch.stack(l1_losses))
+    loss_record['eval_mean_mse_loss'] = torch.mean(torch.stack(mse_losses))
+    loss_record['eval_mean_l1_loss'] = torch.mean(torch.stack(l1_losses))
     loss_record['eval_mse_losses'] = mse_losses
     loss_record['eval_l1_losses'] = l1_losses
     return loss_record

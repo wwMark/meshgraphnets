@@ -23,6 +23,7 @@ import torch.nn.functional as F
 import common
 import normalization
 import encode_process_decode
+import encode_process_decode_max_pooling
 
 device = torch.device('cuda')
 
@@ -33,20 +34,18 @@ class Model(nn.Module):
     def __init__(self, params, output_normalizer):
         super(Model, self).__init__()
         self._params = params
-        # self._output_normalizer = normalization.Normalizer(
-        #    size=3, name='output_normalizer')
         self._output_normalizer = output_normalizer
         self._node_normalizer = normalization.Normalizer(
             size=3 + common.NodeType.SIZE, name='node_normalizer')
         self._edge_normalizer = normalization.Normalizer(
             size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
-        self.learned_model = encode_process_decode.EncodeProcessDecode(
+        self.learned_model = encode_process_decode_max_pooling.EncodeProcessDecode(
             output_size=params['size'],
             latent_size=128,
             num_layers=2,
             message_passing_steps=15)
-        self.learned_model.to(device)
+        self.learned_model
 
     def _build_graph(self, inputs, is_training):
         """Builds input graph."""
@@ -74,14 +73,14 @@ class Model(nn.Module):
 
         mesh_edges = encode_process_decode.EdgeSet(
             name='mesh_edges',
-            # features=self._edge_normalizer(edge_features, is_training),
-            features=edge_features,
+            features=self._edge_normalizer(edge_features, is_training),
+            # features=edge_features,
             receivers=receivers,
             senders=senders)
 
         return encode_process_decode.MultiGraph(
-            # node_features=self._node_normalizer(node_features, is_training),
-            node_features=node_features,
+            node_features=self._node_normalizer(node_features, is_training),
+            #  node_features=node_features,
             edge_sets=[mesh_edges])
 
     def forward(self, inputs, is_training):
@@ -93,10 +92,9 @@ class Model(nn.Module):
 
     def _update(self, inputs, per_node_network_output):
         """Integrate model outputs."""
-        # return per_node_network_output
 
-        # acceleration = self._output_normalizer.inverse(per_node_network_output)
-        acceleration = per_node_network_output
+        acceleration = self._output_normalizer.inverse(per_node_network_output)
+        # acceleration = per_node_network_output
         # integrate forward
         cur_position = inputs['world_pos']
         prev_position = inputs['prev|world_pos']
@@ -109,7 +107,7 @@ class Model(nn.Module):
 
     def load_model(self, path):
         self.learned_model = torch.load(path)
-        self.learned_model.to(device)
+        self.learned_model
 
     def evaluate(self):
         self.eval()

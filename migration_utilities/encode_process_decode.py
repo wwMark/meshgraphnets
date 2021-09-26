@@ -20,9 +20,6 @@ import collections
 import functools
 import torch
 from torch import nn
-from torch.nn import LazyLinear, Sequential, LayerNorm, Module
-
-from torchsummary import summary
 
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])

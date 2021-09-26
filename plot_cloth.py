@@ -63,7 +63,7 @@ def main(unused_argv):
     def animate(num):
         step = (num * skip) % num_steps
         traj = (num * skip) // num_steps
-        # traj = num
+        # traj = 65
         # step = num
         ax.cla()
         bound = bounds[traj]
