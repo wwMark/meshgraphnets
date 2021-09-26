@@ -45,7 +45,6 @@ class Model(nn.Module):
             latent_size=128,
             num_layers=2,
             message_passing_steps=15)
-        self.learned_model
 
     def _build_graph(self, inputs, is_training):
         """Builds input graph."""
