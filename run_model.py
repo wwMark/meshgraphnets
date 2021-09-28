@@ -55,8 +55,8 @@ flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to t
 flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
+flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
@@ -83,15 +83,15 @@ flags.DEFINE_string('logging_dir',
                     'Log file directory')
 flags.DEFINE_string('model_last_checkpoint_file',
                     None,
-                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth',
+                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\Sun-Sep-26-23-06-14-2021\\epoch_model_checkpoint_0.pth',
                     'Path to the checkpoint file of a network that should continue training')
 flags.DEFINE_string('optimizer_last_checkpoint_file',
                     None,
-                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth',
+                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\Sun-Sep-26-23-06-14-2021\\epoch_optimizer_checkpoint_1.pth',
                     'Path to the checkpoint file of a network that should continue training')
 flags.DEFINE_string('last_checkpoint_file',
                     None,
-                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\checkpoint_dir\\checkpoint.pth',
+                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\Sun-Sep-26-23-06-14-2021\\epoch_scheduler_checkpoint_1.pth',
                     'Path to the checkpoint file of a network that should continue training')
 
 PARAMETERS = {
@@ -216,7 +216,7 @@ def process_trajectory(trajectory_data, add_targets_bool=False, split_and_prepro
         trajectory = split_and_preprocess()(trajectory)
     return trajectory
 
-def learner(params, model):
+def learner(model):
     # handles dataset preprocessing, model definition, training process definition and model training
 
     # dataset preprocessing
@@ -226,8 +226,7 @@ def learner(params, model):
 
     batch_size = 1
     prefetch_factor = 2
-    ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', batch_size=batch_size, prefetch_factor=prefetch_factor,
-                                     add_targets=True, split_and_preprocess=True)
+
     # ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', add_targets=add_targets, split_and_preprocess=split_and_preprocess, batch_size=batch_size)
 
     # model definition
@@ -246,6 +245,8 @@ def learner(params, model):
 
     count = 0
     for epoch in range(FLAGS.epochs):
+        ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', batch_size=batch_size, prefetch_factor=prefetch_factor,
+                                     add_targets=True, split_and_preprocess=True)
         # every time when model.train is called, model will train itself with the whole dataset
         root_logger.info("Epoch " + str(epoch + 1) + "/" + str(FLAGS.epochs))
         epoch_training_loss = 0.0
@@ -261,10 +262,10 @@ def learner(params, model):
                 network_output = model(data_frame, is_training)
                 loss = loss_fn(data_frame, network_output)
                 if count % 1000 == 0:
-                    print("1000 step loss", loss)
-                trajectory_loss += loss
+                    root_logger.info("    1000 step loss " + str(loss))
                 optimizer.zero_grad()
                 loss.backward()
+                trajectory_loss += loss.detach()
                 optimizer.step()
             epoch_training_loss += trajectory_loss
             root_logger.info("        trajectory_loss")
@@ -390,7 +391,7 @@ def main(argv):
             learned_model.to(device)
         model = params['model'].Model(params, output_normalizer)
         model.to(device)
-        train_loss_record = learner(params, model)
+        train_loss_record = learner(model)
         root_logger.info("Finished training......")
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         root_logger.info("Start evaluating......")
@@ -405,7 +406,7 @@ def main(argv):
         print("Start all of test_gcn......")
         model = PyG_GCN.Model()
         model.to(device)
-        learner(params, model)
+        learner(model)
         model = PyG_GCN.Model()
         model.load_model(FLAGS.checkpoint_dir + "model_checkpoint.pth")
         model.to(device)
