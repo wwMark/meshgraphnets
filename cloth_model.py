@@ -31,10 +31,10 @@ device = torch.device('cuda')
 class Model(nn.Module):
     """Model for static cloth simulation."""
 
-    def __init__(self, params, output_normalizer):
+    def __init__(self, params):
         super(Model, self).__init__()
         self._params = params
-        self._output_normalizer = output_normalizer
+        self._output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
         self._node_normalizer = normalization.Normalizer(
             size=3 + common.NodeType.SIZE, name='node_normalizer')
         self._edge_normalizer = normalization.Normalizer(
@@ -100,6 +100,9 @@ class Model(nn.Module):
         position = 2 * cur_position + acceleration - prev_position
         # print(position)
         return position
+
+    def get_output_normalizer(self):
+        return self._output_normalizer
 
     def save_model(self, path):
         torch.save(self.learned_model, path)

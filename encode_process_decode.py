@@ -198,13 +198,23 @@ class Processor(nn.Module):
         for index in range(message_passing_steps):
             self._submodules_ordered_dict[str(index)] = GraphNetBlock(model_fn=make_mlp, output_size=output_size)
         self.submodules = nn.Sequential(self._submodules_ordered_dict)
+        '''
+        super().__init__()
+        self._message_passing_steps = message_passing_steps
+        self.submodule = GraphNetBlock(model_fn=make_mlp, output_size=output_size)
+        '''
 
     def forward(self, graph):
         # print("Processor----------------")
         # print("Processor self._submodules", self._submodules)
         # print(repr(self.modules()))
         return self.submodules(graph)
-
+        '''
+        latent_graph = graph
+        for _ in range(self._message_passing_steps):
+            latent_graph = self.submodule(latent_graph)
+        return latent_graph
+        '''
 
 class EncodeProcessDecode(nn.Module):
     """Encode-Process-Decode GraphNet model."""

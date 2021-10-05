@@ -54,7 +54,7 @@ flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to t
 
 flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
 flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
@@ -103,7 +103,7 @@ PARAMETERS = {
                 size=3, batch=1, model=gcn, evaluator=cloth_eval),
 }
 
-output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
+# output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
 loaded_meta = False
 shapes = {}
 dtypes = {}
@@ -260,7 +260,8 @@ def learner(model):
                 count += 1
                 data_frame = squeeze_data_frame(data_frame)
                 network_output = model(data_frame, is_training)
-                loss = loss_fn(data_frame, network_output)
+                loss = loss_fn(data_frame, network_output, model)
+                root_logger.info("    per step loss " + str(loss))
                 if count % 1000 == 0:
                     root_logger.info("    1000 step loss " + str(loss))
                 optimizer.zero_grad()
@@ -295,11 +296,11 @@ def learner(model):
     torch.save(scheduler.state_dict(), os.path.join(FLAGS.checkpoint_dir, "scheduler_checkpoint.pth"))
     loss_record = {}
     loss_record['train_total_loss'] = torch.sum(torch.stack(epoch_training_losses))
-    loss_record['train_mean_epoch_loss'] = torch.sum(torch.stack(epoch_training_losses))
+    loss_record['train_mean_epoch_loss'] = torch.mean(torch.stack(epoch_training_losses))
     loss_record['train_epoch_losses'] = epoch_training_losses
     return loss_record
 
-def loss_fn(inputs, network_output):
+def loss_fn(inputs, network_output, model):
     """L2 loss on position."""
     # build target acceleration
     world_pos = inputs['world_pos']
@@ -310,7 +311,7 @@ def loss_fn(inputs, network_output):
     prev_position = prev_world_pos
     target_position = target_world_pos
     target_acceleration = target_position - 2 * cur_position + prev_position
-    target_normalized = output_normalizer(target_acceleration).to(device)
+    target_normalized = model.get_output_normalizer()(target_acceleration).to(device)
 
     # build loss
     node_type = inputs['node_type']
@@ -389,13 +390,13 @@ def main(argv):
             root_logger.info("Loaded checkpoint file", FLAGS.model_last_checkpoint_file)
             learned_model = torch.load(FLAGS.checkpoint_dir + "model_checkpoint.pth")
             learned_model.to(device)
-        model = params['model'].Model(params, output_normalizer)
+        model = params['model'].Model(params)
         model.to(device)
         train_loss_record = learner(model)
         root_logger.info("Finished training......")
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         root_logger.info("Start evaluating......")
-        model = params['model'].Model(params, output_normalizer)
+        model = params['model'].Model(params)
         model.load_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint.pth"))
         model.evaluate()
         model.to(device)
