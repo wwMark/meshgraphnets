@@ -34,20 +34,22 @@ output_dir = os.path.join(root_dir, 'output')
 all_subdirs = [os.path.join(output_dir, d) for d in os.listdir(output_dir) if
                os.path.isdir(os.path.join(output_dir, d))]
 latest_subdir = max(all_subdirs, key=os.path.getmtime)
-print("Ploting run", latest_subdir)
 rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 
 FLAGS = flags.FLAGS
+# flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\temp\\rollout.pkl', 'Path to rollout pickle file')
 flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
 
 
 def main(unused_argv):
+    print("Ploting run", FLAGS.rollout_path)
     with open(FLAGS.rollout_path, 'rb') as fp:
         rollout_data = pickle.load(fp)
     fig = plt.figure(figsize=(8, 8))
     ax = fig.add_subplot(111, projection='3d')
     skip = 10
-    num_steps = rollout_data[0]['gt_pos'].shape[1]
+    num_steps = rollout_data[0]['gt_pos'].shape[0]
+    print(num_steps)
     num_frames = num_steps
 
     # compute bounds

@@ -244,6 +244,7 @@ def learner(model):
     epoch_training_losses = []
 
     count = 0
+    pass_count = 500
     for epoch in range(FLAGS.epochs):
         ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', batch_size=batch_size, prefetch_factor=prefetch_factor,
                                      add_targets=True, split_and_preprocess=True)
@@ -261,13 +262,15 @@ def learner(model):
                 data_frame = squeeze_data_frame(data_frame)
                 network_output = model(data_frame, is_training)
                 loss = loss_fn(data_frame, network_output, model)
-                root_logger.info("    per step loss " + str(loss))
                 if count % 1000 == 0:
                     root_logger.info("    1000 step loss " + str(loss))
-                optimizer.zero_grad()
-                loss.backward()
-                trajectory_loss += loss.detach()
-                optimizer.step()
+                if pass_count > 0:
+                    pass_count -= 1
+                else:
+                    optimizer.zero_grad()
+                    loss.backward()
+                    trajectory_loss += loss.detach()
+                    optimizer.step()
             epoch_training_loss += trajectory_loss
             root_logger.info("        trajectory_loss")
             root_logger.info("        " + str(trajectory_loss))
@@ -323,7 +326,7 @@ def loss_fn(inputs, network_output, model):
 def evaluator(params, model):
     root_logger = logging.getLogger()
     """Run a model rollout trajectory."""
-    ds_loader = dataset.load_dataset(FLAGS.dataset_dir, FLAGS.rollout_split, add_targets=True)
+    ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', add_targets=True)
     ds_iterator = iter(ds_loader)
     trajectories = []
 
