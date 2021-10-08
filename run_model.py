@@ -439,7 +439,7 @@ def main(argv):
         root_logger.info("Start evaluating......")
         model = params['model'].Model(params)
         model.load_model(os.path.join(run_dir, "checkpoint_dir", "model_checkpoint"))
-        root_logger.info("Loaded model from ")
+        root_logger.info("Loaded model from " + str(run_dir))
         model.evaluate()
         model.to(device)
         eval_loss_record = evaluator(params, model)
@@ -463,8 +463,9 @@ def main(argv):
     elapsed_time = str(datetime.timedelta(seconds=elapsed_time_in_second))
     root_logger.info("Elapsed time " + elapsed_time)
     root_logger.info("--------------------train loss record--------------------")
-    for item in train_loss_record.items():
-        root_logger.info(item)
+    if FLAGS.mode == "train" or FLAGS.mode == "all":
+        for item in train_loss_record.items():
+            root_logger.info(item)
     root_logger.info("---------------------------------------------------------")
     root_logger.info("--------------------eval loss record---------------------")
     if FLAGS.mode == "eval" or FLAGS.mode == "all":
