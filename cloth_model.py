@@ -105,13 +105,12 @@ class Model(nn.Module):
         return self._output_normalizer
 
     def save_model(self, path):
-        torch.save(self.learned_model, path + "_learned_model")
-        torch.save(self._output_normalizer, path + "_output_normalizer")
+        torch.save(self.learned_model, path + "_learned_model.pth")
+        torch.save(self._output_normalizer, path + "_output_normalizer.pth")
 
     def load_model(self, path):
-        self.learned_model = torch.load(path + "_learned_model")
-        self._output_normalizer = torch.load(path + "_output_normalizer")
-        print("self._output_normalizer.get_acc_sum()", self._output_normalizer.get_acc_sum())
+        self.learned_model = torch.load(path + "_learned_model.pth")
+        self._output_normalizer = torch.load(path + "_output_normalizer.pth")
 
     def evaluate(self):
         self.eval()

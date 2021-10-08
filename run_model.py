@@ -29,7 +29,6 @@ import torch
 import cloth_eval
 import cloth_model
 import dataset
-import normalization
 import common
 import logging
 
@@ -46,7 +45,7 @@ from PyG_GCN import gcn
 device = torch.device('cuda')
 
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all', 'test_gcn'],
+flags.DEFINE_enum('mode', 'train', ['train', 'eval', 'all', 'test_gcn'],
                   'Train model, or run evaluation.')
 flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'gcn'],
                   'Select model to run.')
@@ -55,8 +54,8 @@ flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to t
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
+flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
@@ -67,7 +66,6 @@ dataset_name = 'flag_simple'
 dataset_dir = os.path.join(root_dir, 'data', dataset_name)
 output_dir = os.path.join(root_dir, 'output')
 run_dir = os.path.join(output_dir, start_datetime_dash)
-Path(run_dir).mkdir(parents=True, exist_ok=True)
 
 flags.DEFINE_string('dataset_dir',
                     dataset_dir,
@@ -81,9 +79,9 @@ flags.DEFINE_string('rollout_path',
 flags.DEFINE_string('logging_dir',
                     os.path.join(run_dir, 'logs'),
                     'Log file directory')
-flags.DEFINE_string('model_last_checkpoint_file',
-                    None,
-                    # 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\Sun-Sep-26-23-06-14-2021\\epoch_model_checkpoint_0.pth',
+flags.DEFINE_string('model_last_checkpoint_dir',
+                    # None,
+                    os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\Fri-Oct--8-20-25-39-2021', 'checkpoint_dir'),
                     'Path to the checkpoint file of a network that should continue training')
 flags.DEFINE_string('optimizer_last_checkpoint_file',
                     None,
@@ -235,8 +233,13 @@ def learner(model):
 
     # training process definition
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.1 + 1e-6, last_epoch=-1)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.1 + 1e-6, last_epoch=-1)
+    trained_epoch = 0
+    if FLAGS.model_last_checkpoint_dir is not None:
+        optimizer.load_state_dict(torch.load(os.path.join(FLAGS.model_last_checkpoint_dir, "optimizer_checkpoint.pth")))
+        scheduler.load_state_dict(torch.load(os.path.join(FLAGS.model_last_checkpoint_dir, "scheduler_checkpoint.pth")))
+        epoch_checkpoint = torch.load(os.path.join(FLAGS.model_last_checkpoint_dir, "epoch_checkpoint.pth"))
+        trained_epoch = epoch_checkpoint['epoch'] + 1
 
     # model training
     is_training = True
@@ -245,7 +248,7 @@ def learner(model):
 
     count = 0
     pass_count = 500
-    for epoch in range(FLAGS.epochs):
+    for epoch in range(FLAGS.epochs - trained_epoch):
         ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', batch_size=batch_size, prefetch_factor=prefetch_factor,
                                      add_targets=True, split_and_preprocess=True)
         # every time when model.train is called, model will train itself with the whole dataset
@@ -276,7 +279,7 @@ def learner(model):
             root_logger.info("        " + str(trajectory_loss))
             model.save_model(
                 os.path.join(FLAGS.checkpoint_dir,
-                             "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth"))
+                             "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2)))
             torch.save(optimizer.state_dict(),
                        os.path.join(FLAGS.checkpoint_dir,
                                     "trajectory_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
@@ -287,14 +290,15 @@ def learner(model):
         root_logger.info("Current mean of epoch training losses")
         root_logger.info(torch.mean(torch.stack(epoch_training_losses)))
         model.save_model(
-            os.path.join(FLAGS.checkpoint_dir, "epoch_model_checkpoint" + "_" + str((trajectory_index + 1) % 2) + ".pth"))
+            os.path.join(FLAGS.checkpoint_dir, "epoch_model_checkpoint" + "_" + str((trajectory_index + 1) % 2)))
         torch.save(optimizer.state_dict(),
                    os.path.join(FLAGS.checkpoint_dir, "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         torch.save(scheduler.state_dict(),
                    os.path.join(FLAGS.checkpoint_dir, "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         if epoch == (FLAGS.epochs // 2):
             scheduler.step()
-    model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint.pth"))
+        torch.save({'epoch': epoch}, os.path.join(FLAGS.checkpoint_dir, "epoch_checkpoint.pth"))
+    model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint"))
     torch.save(optimizer.state_dict(), os.path.join(FLAGS.checkpoint_dir, "optimizer_checkpoint.pth"))
     torch.save(scheduler.state_dict(), os.path.join(FLAGS.checkpoint_dir, "scheduler_checkpoint.pth"))
     loss_record = {}
@@ -353,7 +357,7 @@ def evaluator(params, model):
     root_logger.info(torch.mean(torch.stack(mse_losses)))
     root_logger.info("mean l1 loss " + str(FLAGS.num_rollouts) + " rollout trajectories")
     root_logger.info(torch.mean(torch.stack(l1_losses)))
-    with open(FLAGS.rollout_path, 'wb') as fp:
+    with open(os.path.join(run_dir, "rollout", "rollout.pkl"), 'wb') as fp:
         pickle.dump(trajectories, fp)
     loss_record = {}
     loss_record['eval_total_mse_loss'] = torch.sum(torch.stack(mse_losses))
@@ -366,12 +370,47 @@ def evaluator(params, model):
 
 
 def main(argv):
-    run_config_record = FLAGS.mode + "_epoch" + str(FLAGS.epochs) + "_trajectory" + str(FLAGS.trajectories) + "_rollout" + str(FLAGS.num_rollouts)
-    Path(os.path.join(run_dir, run_config_record)).touch()
-    Path(FLAGS.logging_dir).mkdir(parents=True, exist_ok=True)
-    Path(FLAGS.checkpoint_dir).mkdir(parents=True, exist_ok=True)
-    Path(Path(FLAGS.rollout_path).parent.absolute()).mkdir(parents=True, exist_ok=True)
-    log_path = os.path.join(FLAGS.logging_dir, "log.log")
+    global run_dir
+    # set log configuration
+    is_all = False
+    if FLAGS.mode == "all":
+        Path(run_dir).mkdir(parents=True, exist_ok=True)
+        # save program configuration in file title
+        run_config_record = FLAGS.mode + "_epoch" + str(FLAGS.epochs) + "_trajectory" + str(
+            FLAGS.trajectories) + "_rollout" + str(FLAGS.num_rollouts)
+        Path(os.path.join(run_dir, run_config_record)).touch()
+        log_path = os.path.join(FLAGS.logging_dir, "all_log.log")
+        is_all = True
+
+    if FLAGS.mode == "train" or is_all:
+        Path(run_dir).mkdir(parents=True, exist_ok=True)
+        # save program configuration in file title
+        if not is_all:
+            run_config_record = FLAGS.mode + "_epoch" + str(FLAGS.epochs) + "_trajectory" + str(FLAGS.trajectories)
+            log_path = os.path.join(FLAGS.logging_dir, "train_log.log")
+        Path(os.path.join(run_dir, run_config_record)).touch()
+
+        # make direcotory for log, checkpoint
+        Path(FLAGS.logging_dir).mkdir(parents=True, exist_ok=True)
+        Path(FLAGS.checkpoint_dir).mkdir(parents=True, exist_ok=True)
+
+    if FLAGS.mode == "eval" or is_all:
+        # find latest directory in output directory
+        all_subdirs = os.listdir(output_dir)
+        all_subdirs = map(lambda d: os.path.join(output_dir, d), all_subdirs)
+        all_subdirs = [d for d in all_subdirs if os.path.isdir(d)]
+        # all_subdirs = [d for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d))]
+        latest_subdir = max(all_subdirs, key=os.path.getmtime)
+        run_dir = latest_subdir
+        # save program configuration in file title
+        if not is_all:
+            run_config_record = FLAGS.mode + "_rollout" + str(FLAGS.num_rollouts)
+            log_path = os.path.join(run_dir, "logs", "eval_log.log")
+        Path(os.path.join(run_dir, run_config_record)).touch()
+
+        # make direcotory for rollout
+        Path(os.path.join(run_dir, "rollout")).mkdir(parents=True, exist_ok=True)
+
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
     console_output_handler = logging.StreamHandler(sys.stdout)
@@ -389,21 +428,20 @@ def main(argv):
 
     if FLAGS.mode == 'train' or FLAGS.mode == 'all':
         root_logger.info("Start training......")
-        if FLAGS.model_last_checkpoint_file is not None:
-            root_logger.info("Loaded checkpoint file", FLAGS.model_last_checkpoint_file)
-            learned_model = torch.load(FLAGS.checkpoint_dir + "model_checkpoint.pth")
-            learned_model.to(device)
         model = params['model'].Model(params)
+        if FLAGS.model_last_checkpoint_dir is not None:
+            model.load_model(os.path.join(FLAGS.model_last_checkpoint_dir, "model_checkpoint"))
+            root_logger.info("Loaded checkpoint file in " + str(FLAGS.model_last_checkpoint_dir) + "and starting retraining...")
         model.to(device)
         train_loss_record = learner(model)
         root_logger.info("Finished training......")
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         root_logger.info("Start evaluating......")
         model = params['model'].Model(params)
-        model.load_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint.pth"))
+        model.load_model(os.path.join(run_dir, "checkpoint_dir", "model_checkpoint"))
+        root_logger.info("Loaded model from ")
         model.evaluate()
         model.to(device)
-        model.eval()
         eval_loss_record = evaluator(params, model)
         root_logger.info("Finished evaluating......")
     if FLAGS.mode == 'test_gcn':
@@ -429,8 +467,9 @@ def main(argv):
         root_logger.info(item)
     root_logger.info("---------------------------------------------------------")
     root_logger.info("--------------------eval loss record---------------------")
-    for item in eval_loss_record.items():
-        root_logger.info(item)
+    if FLAGS.mode == "eval" or FLAGS.mode == "all":
+        for item in eval_loss_record.items():
+            root_logger.info(item)
     root_logger.info("---------------------------------------------------------")
 
 
