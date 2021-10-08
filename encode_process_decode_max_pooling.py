@@ -33,11 +33,14 @@ device = torch.device('cuda')
 class LazyMLP(nn.Module):
     def __init__(self, output_sizes):
         super().__init__()
-        self.layers = nn.Sequential()
+        num_layers = len(output_sizes)
+        self._layers_ordered_dict = OrderedDict()
         for index, output_size in enumerate(output_sizes):
+            self._layers_ordered_dict["linear_" + str(index)] = nn.LazyLinear(output_size)
             # self.layers.add_module("linear_%d" % index, LazyLinear(output_size))
-            self.layers.add_module("linear_%d" % index, nn.LazyLinear(output_size))
-        # self.layers.add_module("relu", nn.ReLU6())
+            if index < (num_layers - 1):
+                self._layers_ordered_dict["relu_" + str(index)] = nn.ReLU()
+        self.layers = nn.Sequential(self._layers_ordered_dict)
 
     def forward(self, input):
         input = input.to(device)
