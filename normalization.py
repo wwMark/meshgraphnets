@@ -95,3 +95,6 @@ class Normalizer(nn.Module):
         safe_count = torch.maximum(self._acc_count, torch.tensor([1.], device=device))
         std = torch.sqrt(self._acc_sum_squared / safe_count - self._mean() ** 2)
         return torch.maximum(std, self._std_epsilon)
+
+    def get_acc_sum(self):
+        return self._acc_sum

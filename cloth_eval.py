@@ -49,6 +49,7 @@ def _rollout(model, initial_state, num_steps):
         print(cur_pos.shape)
         '''
         next_pos = torch.where(mask, torch.squeeze(prediction), torch.squeeze(cur_pos))
+        # next_pos = prediction
         '''
         print("next_pos shape")
         print(next_pos.shape)
@@ -74,6 +75,15 @@ def _rollout(model, initial_state, num_steps):
 
 def evaluate(model, trajectory):
     """Performs model rollouts and create stats."""
+    '''
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(name)
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(param.data)
+    quit()
+    '''
     initial_state = {k: torch.squeeze(v, 0)[0] for k, v in trajectory.items()}
     num_steps = trajectory['cells'].shape[0]
     prediction = _rollout(model, initial_state, num_steps)

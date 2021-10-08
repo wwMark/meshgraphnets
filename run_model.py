@@ -52,9 +52,9 @@ flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'gcn'],
                   'Select model to run.')
 flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to train.')
 
-flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
+flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
+flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
 flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
@@ -326,7 +326,7 @@ def loss_fn(inputs, network_output, model):
 def evaluator(params, model):
     root_logger = logging.getLogger()
     """Run a model rollout trajectory."""
-    ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', add_targets=True)
+    ds_loader = dataset.load_dataset(FLAGS.dataset_dir, FLAGS.rollout_split, add_targets=True)
     ds_iterator = iter(ds_loader)
     trajectories = []
 
