@@ -54,8 +54,8 @@ flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to t
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
+flags.DEFINE_integer('trajectories', 3, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
@@ -80,8 +80,8 @@ flags.DEFINE_string('logging_dir',
                     os.path.join(run_dir, 'logs'),
                     'Log file directory')
 flags.DEFINE_string('model_last_checkpoint_dir',
-                    # None,
-                    os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\Fri-Oct--8-20-25-39-2021', 'checkpoint_dir'),
+                    None,
+                    # os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\Fri-Oct--8-20-25-39-2021', 'checkpoint_dir'),
                     'Path to the checkpoint file of a network that should continue training')
 flags.DEFINE_string('optimizer_last_checkpoint_file',
                     None,
@@ -295,8 +295,8 @@ def learner(model):
                    os.path.join(FLAGS.checkpoint_dir, "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         torch.save(scheduler.state_dict(),
                    os.path.join(FLAGS.checkpoint_dir, "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
-        if epoch == (FLAGS.epochs // 2):
-            scheduler.step()
+        # if epoch == (FLAGS.epochs // 2):
+        #    scheduler.step()
         torch.save({'epoch': epoch}, os.path.join(FLAGS.checkpoint_dir, "epoch_checkpoint.pth"))
     model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint"))
     torch.save(optimizer.state_dict(), os.path.join(FLAGS.checkpoint_dir, "optimizer_checkpoint.pth"))

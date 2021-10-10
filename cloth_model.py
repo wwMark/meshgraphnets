@@ -24,6 +24,7 @@ import common
 import normalization
 import encode_process_decode
 import encode_process_decode_max_pooling
+import encode_process_decode_lstm
 
 device = torch.device('cuda')
 
@@ -40,7 +41,7 @@ class Model(nn.Module):
         self._edge_normalizer = normalization.Normalizer(
             size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
-        self.learned_model = encode_process_decode.EncodeProcessDecode(
+        self.learned_model = encode_process_decode_lstm.EncodeProcessDecode(
             output_size=params['size'],
             latent_size=128,
             num_layers=2,
