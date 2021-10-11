@@ -49,7 +49,7 @@ def main(unused_argv):
     ax = fig.add_subplot(111, projection='3d')
     skip = 10
     num_steps = rollout_data[0]['gt_pos'].shape[0]
-    print(num_steps)
+    # print(num_steps)
     num_frames = num_steps
 
     # compute bounds
@@ -65,8 +65,8 @@ def main(unused_argv):
     def animate(num):
         step = (num * skip) % num_steps
         traj = (num * skip) // num_steps
-        # traj = 65
-        # step = num
+        # traj = num // num_steps
+        # step = (num * 3) % num_steps
         ax.cla()
         bound = bounds[traj]
 
@@ -75,7 +75,7 @@ def main(unused_argv):
         ax.set_zlim([bound[0][2], bound[1][2]])
 
         pos = torch.squeeze(rollout_data[traj]['pred_pos'], dim=0)[step].to('cpu')
-        print(pos[10])
+        # print(pos[10])
         faces = torch.squeeze(rollout_data[traj]['faces'], dim=0)[step].to('cpu')
         ax.plot_trisurf(pos[:, 0], pos[:, 1], faces, pos[:, 2], shade=True)
         ax.set_title('Trajectory %d Step %d' % (traj, step))

@@ -45,7 +45,7 @@ from PyG_GCN import gcn
 device = torch.device('cuda')
 
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('mode', 'train', ['train', 'eval', 'all', 'test_gcn'],
+flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all', 'test_gcn'],
                   'Train model, or run evaluation.')
 flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'gcn'],
                   'Select model to run.')
@@ -53,9 +53,9 @@ flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to t
 
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 3, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 30, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
@@ -295,8 +295,8 @@ def learner(model):
                    os.path.join(FLAGS.checkpoint_dir, "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         torch.save(scheduler.state_dict(),
                    os.path.join(FLAGS.checkpoint_dir, "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
-        # if epoch == (FLAGS.epochs // 2):
-        #    scheduler.step()
+        if epoch == 25:
+           scheduler.step()
         torch.save({'epoch': epoch}, os.path.join(FLAGS.checkpoint_dir, "epoch_checkpoint.pth"))
     model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint"))
     torch.save(optimizer.state_dict(), os.path.join(FLAGS.checkpoint_dir, "optimizer_checkpoint.pth"))

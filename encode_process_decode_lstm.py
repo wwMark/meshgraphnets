@@ -215,14 +215,8 @@ class Processor(nn.Module):
             self._node_layer_output.append(graph.node_features)
 
             # for lstm
-            print("node features shape")
-            print(graph.node_features.shape)
             bi_lstm_single_output, _ = self._bi_lstm(torch.unsqueeze(graph.node_features, dim=0))
-            print("bi_lstm output shape")
-            print(bi_lstm_single_output.shape)
             linear_mapping = self._lstm_linear_mapping(bi_lstm_single_output)
-            print("linear output shape")
-            print(linear_mapping.shape)
             self._bi_lstm_output.append(torch.sum(torch.squeeze(linear_mapping, dim=0), dim=0))
 
         # new_node_features, _ = torch.max(torch.stack(self._node_layer_output), dim=0)

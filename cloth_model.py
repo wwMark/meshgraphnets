@@ -41,7 +41,7 @@ class Model(nn.Module):
         self._edge_normalizer = normalization.Normalizer(
             size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
-        self.learned_model = encode_process_decode_lstm.EncodeProcessDecode(
+        self.learned_model = encode_process_decode.EncodeProcessDecode(
             output_size=params['size'],
             latent_size=128,
             num_layers=2,
@@ -108,10 +108,14 @@ class Model(nn.Module):
     def save_model(self, path):
         torch.save(self.learned_model, path + "_learned_model.pth")
         torch.save(self._output_normalizer, path + "_output_normalizer.pth")
+        torch.save(self._edge_normalizer, path + "_edge_normalizer.pth")
+        torch.save(self._node_normalizer, path + "_node_normalizer.pth")
 
     def load_model(self, path):
         self.learned_model = torch.load(path + "_learned_model.pth")
         self._output_normalizer = torch.load(path + "_output_normalizer.pth")
+        self._edge_normalizer = torch.load(path + "_edge_normalizer.pth")
+        self._node_normalizer = torch.load(path + "_node_normalizer.pth")
 
     def evaluate(self):
         self.eval()
