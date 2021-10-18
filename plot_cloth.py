@@ -65,8 +65,8 @@ def main(unused_argv):
     def animate(num):
         step = (num * skip) % num_steps
         traj = (num * skip) // num_steps
-        # traj = num // num_steps
-        # step = (num * 3) % num_steps
+        traj = num // num_steps
+        step = (num * 3) % num_steps
         ax.cla()
         bound = bounds[traj]
 
@@ -81,7 +81,7 @@ def main(unused_argv):
         ax.set_title('Trajectory %d Step %d' % (traj, step))
         return fig,
 
-    _ = animation.FuncAnimation(fig, animate, frames=num_frames, interval=100)
+    _ = animation.FuncAnimation(fig, animate, frames=num_frames * 10, interval=50)
     plt.show(block=True)
 
 

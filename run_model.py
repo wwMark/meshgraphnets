@@ -51,11 +51,11 @@ flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'gcn'],
                   'Select model to run.')
 flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to train.')
 
-flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
+flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 30, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 1000, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 25, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 10, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')

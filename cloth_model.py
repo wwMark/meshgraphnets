@@ -25,9 +25,12 @@ import normalization
 import encode_process_decode
 import encode_process_decode_max_pooling
 import encode_process_decode_lstm
+import encode_process_decode_graph_structure_watcher
+import encode_process_decode_hub
 
 device = torch.device('cuda')
-
+core_name = encode_process_decode_hub
+# core_name = encode_process_decode
 
 class Model(nn.Module):
     """Model for static cloth simulation."""
@@ -41,11 +44,11 @@ class Model(nn.Module):
         self._edge_normalizer = normalization.Normalizer(
             size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
-        self.learned_model = encode_process_decode.EncodeProcessDecode(
+        self.learned_model = core_name.EncodeProcessDecode(
             output_size=params['size'],
             latent_size=128,
             num_layers=2,
-            message_passing_steps=15)
+            message_passing_steps=7)
 
     def _build_graph(self, inputs, is_training):
         """Builds input graph."""
@@ -71,17 +74,17 @@ class Model(nn.Module):
             relative_mesh_pos,
             torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
 
-        mesh_edges = encode_process_decode.EdgeSet(
+        mesh_edges = core_name.EdgeSet(
             name='mesh_edges',
             features=self._edge_normalizer(edge_features, is_training),
             # features=edge_features,
             receivers=receivers,
             senders=senders)
 
-        return encode_process_decode.MultiGraph(
-            node_features=self._node_normalizer(node_features, is_training),
-            #  node_features=node_features,
-            edge_sets=[mesh_edges])
+        if core_name == encode_process_decode_hub:
+            return core_name.MultiGraph(node_features=self._node_normalizer(node_features, is_training), edge_sets=[mesh_edges], world_pos=world_pos, mesh_pos=mesh_pos)
+        else:
+            return core_name.MultiGraph(node_features=self._node_normalizer(node_features, is_training), edge_sets=[mesh_edges])
 
     def forward(self, inputs, is_training):
         graph = self._build_graph(inputs, is_training=is_training)

@@ -17,11 +17,12 @@
 """Core learned graph net model."""
 
 import collections
+from math import ceil
 from collections import OrderedDict
 import functools
 import torch
 from torch import nn as nn
-# from torch import multiprocessing as mp
+import torch.nn.functional as F
 
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])
@@ -53,9 +54,6 @@ class GraphNetBlock(nn.Module):
         super().__init__()
         self.edge_model = model_fn(output_size)
         self.node_model = model_fn(output_size)
-        # self._cpu_cores = mp.cpu_count()
-        # self._cpu_cores = 4
-        # self._update_node_features_thread_pool = mp.Pool(self._cpu_cores)
 
     def _update_edge_features(self, node_features, edge_set):
         """Aggregrates node features, and applies edge function."""
@@ -198,23 +196,39 @@ class Processor(nn.Module):
         for index in range(message_passing_steps):
             self._submodules_ordered_dict[str(index)] = GraphNetBlock(model_fn=make_mlp, output_size=output_size)
         self.submodules = nn.Sequential(self._submodules_ordered_dict)
-        '''
-        super().__init__()
-        self._message_passing_steps = message_passing_steps
-        self.submodule = GraphNetBlock(model_fn=make_mlp, output_size=output_size)
-        '''
 
     def forward(self, graph):
-        # print("Processor----------------")
-        # print("Processor self._submodules", self._submodules)
-        # print(repr(self.modules()))
         return self.submodules(graph)
-        '''
-        latent_graph = graph
-        for _ in range(self._message_passing_steps):
-            latent_graph = self.submodule(latent_graph)
+
+class GraphStructureWatcher(nn.Module):
+    def __init__(self, make_mlp, output_size):
+        super().__init__()
+        self.reduce_model = make_mlp(output_size)
+        self.expand_model = make_mlp(output_size)
+
+    def forward(self, latent_graph, graph):
+        # get high_rank_percentage percent of the graph node features with the highest velocity
+        high_rank_percentage = 0.01
+        velocity_matrix = graph.node_features[:, 0:3]
+        sort_by_velocity = torch.square(velocity_matrix)
+        sort_by_velocity = torch.sum(sort_by_velocity, dim=-1)
+        _, sort_indices = torch.sort(sort_by_velocity, dim=0, descending=True)
+
+        # exclude the nodes outside high_rank_percentage from softmaxing
+        high_rank_number = ceil(sort_indices.shape[0] * high_rank_percentage)
+        sort_indices = sort_indices[0:high_rank_number]
+        high_rank_tensor = torch.zeros_like(velocity_matrix)
+        high_rank_tensor[sort_indices] = velocity_matrix[sort_indices]
+        high_rank_tensor = self.expand_model(high_rank_tensor)
+        high_rank_tensor = F.softmax(high_rank_tensor)
+
+        node_features = latent_graph.node_features
+        node_features = torch.transpose(node_features, 0, 1)
+        node_result = torch.matmul(high_rank_tensor, node_features)
+        node_result = torch.transpose(node_result, 0, 1)
+        node_result = self.reduce_model(node_result)
+        latent_graph = latent_graph._replace(node_features=node_result)
         return latent_graph
-        '''
 
 class EncodeProcessDecode(nn.Module):
     """Encode-Process-Decode GraphNet model."""
@@ -232,6 +246,7 @@ class EncodeProcessDecode(nn.Module):
         self.encoder = Encoder(make_mlp=self._make_mlp, latent_size=self._latent_size)
         self.processor = Processor(make_mlp=self._make_mlp, output_size=self._latent_size,
                                     message_passing_steps=self._message_passing_steps)
+        self.graph_structure_watcher = GraphStructureWatcher(make_mlp=self._make_mlp, output_size=self._latent_size)
         self.decoder = Decoder(make_mlp=functools.partial(self._make_mlp, layer_norm=False),
                                 output_size=self._output_size)
 
@@ -246,6 +261,6 @@ class EncodeProcessDecode(nn.Module):
     def forward(self, graph):
         """Encodes and processes a multigraph, and returns node features."""
         latent_graph = self.encoder(graph)
-        # print("EncodeProcessDecode input graph", graph)
         latent_graph = self.processor(latent_graph)
+        latent_graph = self.graph_structure_watcher(latent_graph, graph)
         return self.decoder(latent_graph)
