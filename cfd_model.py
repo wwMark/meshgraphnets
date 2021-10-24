@@ -16,79 +16,102 @@
 # ============================================================================
 """Model for CylinderFlow."""
 
-import sonnet as snt
-import tensorflow.compat.v1 as tf
+import common
+import normalization
 
-from meshgraphnets import common
-from meshgraphnets import core_model
-from meshgraphnets import normalization
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import encode_process_decode
+import encode_process_decode_max_pooling
+import encode_process_decode_lstm
+import encode_process_decode_graph_structure_watcher
+import encode_process_decode_hub
+
+device = torch.device('cuda')
+core_name = encode_process_decode
 
 
-class Model(snt.AbstractModule):
-  """Model for fluid simulation."""
+# core_name = encode_process_decode
 
-  def __init__(self, learned_model, name='Model'):
-    super(Model, self).__init__(name=name)
-    with self._enter_variable_scope():
-      self._learned_model = learned_model
-      self._output_normalizer = normalization.Normalizer(
-          size=2, name='output_normalizer')
-      self._node_normalizer = normalization.Normalizer(
-          size=2+common.NodeType.SIZE, name='node_normalizer')
-      self._edge_normalizer = normalization.Normalizer(
-          size=3, name='edge_normalizer')  # 2D coord + length
+class Model(nn.Module):
+    """Model for fluid simulation."""
 
-  def _build_graph(self, inputs, is_training):
-    """Builds input graph."""
-    # construct graph nodes
-    node_type = tf.one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE)
-    node_features = tf.concat([inputs['velocity'], node_type], axis=-1)
+    def __init__(self, params):
+        super(Model, self).__init__()
+        self._params = params
+        self._output_normalizer = normalization.Normalizer(size=2, name='output_normalizer')
+        self._node_normalizer = normalization.Normalizer(size=2 + common.NodeType.SIZE, name='node_normalizer')
+        self._edge_normalizer = normalization.Normalizer(size=3, name='edge_normalizer')  # 2D coord + length
 
-    # construct graph edges
-    senders, receivers = common.triangles_to_edges(inputs['cells'])
-    relative_mesh_pos = (tf.gather(inputs['mesh_pos'], senders) -
-                         tf.gather(inputs['mesh_pos'], receivers))
-    edge_features = tf.concat([
-        relative_mesh_pos,
-        tf.norm(relative_mesh_pos, axis=-1, keepdims=True)], axis=-1)
+        self.message_passing_steps = 7
+        self.learned_model = core_name.EncodeProcessDecode(
+            output_size=params['size'],
+            latent_size=128,
+            num_layers=2,
+            message_passing_steps=self.message_passing_steps)
+        self.core_model = str(core_name)
 
-    mesh_edges = core_model.EdgeSet(
-        name='mesh_edges',
-        features=self._edge_normalizer(edge_features, is_training),
-        receivers=receivers,
-        senders=senders)
-    return core_model.MultiGraph(
-        node_features=self._node_normalizer(node_features, is_training),
-        edge_sets=[mesh_edges])
+    def get_core_model_name(self):
+        return repr(self.core_model)
 
-  def _build(self, inputs):
-    graph = self._build_graph(inputs, is_training=False)
-    per_node_network_output = self._learned_model(graph)
-    return self._update(inputs, per_node_network_output)
+    def get_message_passing_steps(self):
+        return str(self.message_passing_steps)
 
-  @snt.reuse_variables
-  def loss(self, inputs):
-    """L2 loss on velocity."""
-    graph = self._build_graph(inputs, is_training=True)
-    network_output = self._learned_model(graph)
+    def _build_graph(self, inputs, is_training):
+        """Builds input graph."""
+        node_type = inputs['node_type']
+        velocity = inputs['velocity']
+        node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE)
 
-    # build target velocity change
-    cur_velocity = inputs['velocity']
-    target_velocity = inputs['target|velocity']
-    target_velocity_change = target_velocity - cur_velocity
-    target_normalized = self._output_normalizer(target_velocity_change)
+        node_features = torch.cat((velocity, node_type), dim=-1)
 
-    # build loss
-    node_type = inputs['node_type'][:, 0]
-    loss_mask = tf.logical_or(tf.equal(node_type, common.NodeType.NORMAL),
-                              tf.equal(node_type, common.NodeType.OUTFLOW))
-    error = tf.reduce_sum((target_normalized - network_output)**2, axis=1)
-    loss = tf.reduce_mean(error[loss_mask])
-    return loss
+        senders, receivers = common.triangles_to_edges(inputs['cells'])
+        mesh_pos = inputs['mesh_pos']
+        relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                             torch.index_select(mesh_pos, 0, receivers))
+        edge_features = torch.cat([
+            relative_mesh_pos,
+            torch.norm(relative_mesh_pos, dim=-1, keepdim=True)], dim=-1)
 
-  def _update(self, inputs, per_node_network_output):
-    """Integrate model outputs."""
-    velocity_update = self._output_normalizer.inverse(per_node_network_output)
-    # integrate forward
-    cur_velocity = inputs['velocity']
-    return cur_velocity + velocity_update
+        mesh_edges = core_name.EdgeSet(
+            name='mesh_edges',
+            features=self._edge_normalizer(edge_features, is_training),
+            receivers=receivers,
+            senders=senders)
+        return core_name.MultiGraph(
+            node_features=self._node_normalizer(node_features, is_training),
+            edge_sets=[mesh_edges])
+
+    def forward(self, inputs, is_training):
+        graph = self._build_graph(inputs, is_training=is_training)
+        if is_training:
+            return self.learned_model(graph)
+        else:
+            return self._update(inputs, self.learned_model(graph))
+
+    def _update(self, inputs, per_node_network_output):
+        """Integrate model outputs."""
+        velocity_update = self._output_normalizer.inverse(per_node_network_output)
+        # integrate forward
+        cur_velocity = inputs['velocity']
+        return cur_velocity + velocity_update
+
+    def get_output_normalizer(self):
+        return self._output_normalizer
+
+    def save_model(self, path):
+        torch.save(self.learned_model, path + "_learned_model.pth")
+        torch.save(self._output_normalizer, path + "_output_normalizer.pth")
+        torch.save(self._edge_normalizer, path + "_edge_normalizer.pth")
+        torch.save(self._node_normalizer, path + "_node_normalizer.pth")
+
+    def load_model(self, path):
+        self.learned_model = torch.load(path + "_learned_model.pth")
+        self._output_normalizer = torch.load(path + "_output_normalizer.pth")
+        self._edge_normalizer = torch.load(path + "_edge_normalizer.pth")
+        self._node_normalizer = torch.load(path + "_node_normalizer.pth")
+
+    def evaluate(self):
+        self.eval()
+        self.learned_model.eval()

@@ -15,48 +15,54 @@
 # limitations under the License.
 # ============================================================================
 """Functions to build evaluation metrics for CFD data."""
+import torch
 
-import tensorflow.compat.v1 as tf
+import common
 
-from meshgraphnets.common import NodeType
+device = torch.device('cuda')
 
 
 def _rollout(model, initial_state, num_steps):
-  """Rolls out a model trajectory."""
-  node_type = initial_state['node_type'][:, 0]
-  mask = tf.logical_or(tf.equal(node_type, NodeType.NORMAL),
-                       tf.equal(node_type, NodeType.OUTFLOW))
+    """Rolls out a model trajectory."""
+    node_type = initial_state['node_type']
+    mask = torch.logical_or(torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device)),
+                            torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OUTFLOW.value], device=device)))
+    mask = torch.stack((mask, mask), dim=1)
 
-  def step_fn(step, velocity, trajectory):
-    prediction = model({**initial_state,
-                        'velocity': velocity})
-    # don't update boundary nodes
-    next_velocity = tf.where(mask, prediction, velocity)
-    trajectory = trajectory.write(step, velocity)
-    return step+1, next_velocity, trajectory
+    def step_fn(velocity, trajectory):
+        with torch.no_grad():
+            prediction = model({**initial_state,
+                                'velocity': velocity}, is_training=False)
+            # don't update boundary nodes
+            next_velocity = torch.where(mask, torch.squeeze(prediction), torch.squeeze(velocity))
+            trajectory.append(velocity)
+            return next_velocity, trajectory
 
-  _, _, output = tf.while_loop(
-      cond=lambda step, cur, traj: tf.less(step, num_steps),
-      body=step_fn,
-      loop_vars=(0, initial_state['velocity'],
-                 tf.TensorArray(tf.float32, num_steps)),
-      parallel_iterations=1)
-  return output.stack()
+    velocity = torch.squeeze(initial_state['velocity'], 0)
+    trajectory = []
+    for step in range(num_steps):
+        velocity, trajectory = step_fn(velocity, trajectory)
+    return torch.stack(trajectory)
 
 
-def evaluate(model, inputs):
-  """Performs model rollouts and create stats."""
-  initial_state = {k: v[0] for k, v in inputs.items()}
-  num_steps = inputs['cells'].shape[0]
-  prediction = _rollout(model, initial_state, num_steps)
+def evaluate(model, trajectory):
+    """Performs model rollouts and create stats."""
+    initial_state = {k: torch.squeeze(v, 0)[0] for k, v in trajectory.items()}
+    num_steps = trajectory['cells'].shape[0]
+    prediction = _rollout(model, initial_state, num_steps)
 
-  error = tf.reduce_mean((prediction - inputs['velocity'])**2, axis=-1)
-  scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
-             for horizon in [1, 10, 20, 50, 100, 200]}
-  traj_ops = {
-      'faces': inputs['cells'],
-      'mesh_pos': inputs['mesh_pos'],
-      'gt_velocity': inputs['velocity'],
-      'pred_velocity': prediction
-  }
-  return scalars, traj_ops
+    '''
+    error = tf.reduce_mean((prediction - inputs['velocity'])**2, axis=-1)
+    scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
+               for horizon in [1, 10, 20, 50, 100, 200]}
+    '''
+
+    scalars = None
+
+    traj_ops = {
+        'faces': trajectory['cells'],
+        'mesh_pos': trajectory['mesh_pos'],
+        'gt_velocity': trajectory['velocity'],
+        'pred_velocity': prediction
+    }
+    return scalars, traj_ops

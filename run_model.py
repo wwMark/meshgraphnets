@@ -26,8 +26,11 @@ from absl import flags
 
 import torch
 
-import cloth_eval
 import cloth_model
+import cloth_eval
+import cfd_model
+import cfd_eval
+
 import dataset
 import common
 import logging
@@ -39,32 +42,27 @@ from common import NodeType
 import time
 import datetime
 
-import PyG_GCN
-from PyG_GCN import gcn
-
 device = torch.device('cuda')
 
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all', 'test_gcn'],
+flags.DEFINE_enum('mode', 'eval', ['train', 'eval', 'all', 'test_gcn'],
                   'Train model, or run evaluation.')
-flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'gcn'],
+flags.DEFINE_enum('model', 'cfd', ['cfd', 'cloth'],
                   'Select model to run.')
-flags.DEFINE_enum('network', 'PyG_GCN', ['mgn', 'PyG_GCN'], 'Select network to train.')
-
-flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
+flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 25, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 10, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
 start_datetime_dash = start_datetime.replace(" ", "-").replace(":", "-")
 
 root_dir = pathlib.Path(__file__).parent.resolve()
-dataset_name = 'flag_simple'
+dataset_name = 'cylinder_flow'
 dataset_dir = os.path.join(root_dir, 'data', dataset_name)
-output_dir = os.path.join(root_dir, 'output')
+output_dir = os.path.join(root_dir, 'output', dataset_name)
 run_dir = os.path.join(output_dir, start_datetime_dash)
 
 flags.DEFINE_string('dataset_dir',
@@ -93,12 +91,10 @@ flags.DEFINE_string('last_checkpoint_file',
                     'Path to the checkpoint file of a network that should continue training')
 
 PARAMETERS = {
-    # 'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
-    #             size=2, batch=2, model=cfd_model, evaluator=cfd_eval),
+    'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
+                size=2, batch=2, model=cfd_model, evaluator=cfd_eval, loss_type='cfd'),
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
-                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval),
-    'gcn': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
-                size=3, batch=1, model=gcn, evaluator=cloth_eval),
+                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval, loss_type='cloth')
 }
 
 # output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
@@ -112,10 +108,10 @@ def squeeze_data_frame(data_frame):
         data_frame[k] = torch.squeeze(v, 0)
     return data_frame
 
-def add_targets():
+def add_targets(params):
     """Adds target and optionally history fields to dataframe."""
-    fields = 'world_pos'
-    add_history = True
+    fields = params['field']
+    add_history = params['history']
 
     def fn(trajectory):
         out = {}
@@ -129,46 +125,60 @@ def add_targets():
 
     return fn
 
-def split_and_preprocess():
+def split_and_preprocess(params, model_type):
     """Splits trajectories into frames, and adds training noise."""
-    noise_field = 'world_pos'
-    noise_scale = 0.003
-    noise_gamma = 0.1
+    noise_field = params['field']
+    noise_scale = params['noise']
+    noise_gamma = params['gamma']
 
     def add_noise(frame):
         zero_size = torch.zeros(frame[noise_field].size(), dtype=torch.float32).to(device)
         noise = torch.normal(zero_size, std=noise_scale).to(device)
         other = torch.Tensor([NodeType.NORMAL.value]).to(device)
         mask = torch.eq(frame['node_type'], other.int())[:, 0]
-        mask = torch.stack((mask, mask, mask), dim=1)
+        mask_sequence = []
+        for i in range(noise.shape[1]):
+            mask_sequence.append(mask)
+        mask = torch.stack(mask_sequence, dim=1)
         noise = torch.where(mask, noise, torch.zeros_like(noise))
         frame[noise_field] += noise
         frame['target|' + noise_field] += (1.0 - noise_gamma) * noise
         return frame
 
     def element_operation(trajectory):
-        world_pos = trajectory['world_pos']
-        mesh_pos = trajectory['mesh_pos']
-        node_type = trajectory['node_type']
-        cells = trajectory['cells']
-        target_world_pos = trajectory['target|world_pos']
-        prev_world_pos = trajectory['prev|world_pos']
+        '''
+        if model_type == 'cloth':
+            world_pos = trajectory['world_pos']
+            mesh_pos = trajectory['mesh_pos']
+            node_type = trajectory['node_type']
+            cells = trajectory['cells']
+            target_world_pos = trajectory['target|world_pos']
+            prev_world_pos = trajectory['prev|world_pos']
+            trajectory_steps = []
+            for i in range(399):
+                wp = world_pos[i]
+                mp = mesh_pos[i]
+                twp = target_world_pos[i]
+                nt = node_type[i]
+                c = cells[i]
+                pwp = prev_world_pos[i]
+                trajectory_step = {'world_pos': wp, 'mesh_pos': mp, 'node_type': nt, 'cells': c,
+                                   'target|world_pos': twp, 'prev|world_pos': pwp}
+                noisy_trajectory_step = add_noise(trajectory_step)
+                trajectory_steps.append(noisy_trajectory_step)
+            return trajectory_steps
+        '''
         trajectory_steps = []
         for i in range(399):
-            wp = world_pos[i]
-            mp = mesh_pos[i]
-            twp = target_world_pos[i]
-            nt = node_type[i]
-            c = cells[i]
-            pwp = prev_world_pos[i]
-            trajectory_step = {'world_pos': wp, 'mesh_pos': mp, 'node_type': nt, 'cells': c,
-                               'target|world_pos': twp, 'prev|world_pos': pwp}
+            trajectory_step = {}
+            for key, value in trajectory.items():
+                trajectory_step[key] = value[i]
             noisy_trajectory_step = add_noise(trajectory_step)
             trajectory_steps.append(noisy_trajectory_step)
         return trajectory_steps
     return element_operation
 
-def process_trajectory(trajectory_data, add_targets_bool=False, split_and_preprocess_bool=False):
+def process_trajectory(trajectory_data, params, model_type, add_targets_bool=False, split_and_preprocess_bool=False):
     global loaded_meta
     global shapes
     global dtypes
@@ -202,25 +212,22 @@ def process_trajectory(trajectory_data, add_targets_bool=False, split_and_prepro
             raise ValueError('invalid data format')
         trajectory[key] = reshaped_data
 
-    '''
-    if self.add_targets is not None:
-        trajectory = self.add_targets(trajectory)
-    if self.split_and_preprocess is not None:
-        trajectory = self.split_and_preprocess(trajectory)
-    '''
     if add_targets_bool:
-        trajectory = add_targets()(trajectory)
+        trajectory = add_targets(params)(trajectory)
     if split_and_preprocess_bool:
-        trajectory = split_and_preprocess()(trajectory)
+        trajectory = split_and_preprocess(params, model_type)(trajectory)
     return trajectory
 
-def learner(model):
+def learner(model, params):
     # handles dataset preprocessing, model definition, training process definition and model training
 
     # dataset preprocessing
     # batch size can be defined in load_dataset. Default to 1.
 
     root_logger = logging.getLogger()
+
+    loss_type = params['loss_type']
+    model_type = FLAGS.model
 
     batch_size = 1
     prefetch_factor = 2
@@ -258,13 +265,13 @@ def learner(model):
         for trajectory_index in range(FLAGS.trajectories):
             root_logger.info("    trajectory index " + str(trajectory_index + 1) + "/" + str(FLAGS.trajectories))
             trajectory = next(ds_iterator)
-            trajectory = process_trajectory(trajectory, True, True)
+            trajectory = process_trajectory(trajectory, params, model_type, True, True)
             trajectory_loss = 0.0
             for data_frame_index, data_frame in enumerate(trajectory):
                 count += 1
                 data_frame = squeeze_data_frame(data_frame)
                 network_output = model(data_frame, is_training)
-                loss = loss_fn(data_frame, network_output, model)
+                loss = loss_fn(loss_type, data_frame, network_output, model, params)
                 if count % 1000 == 0:
                     root_logger.info("    1000 step loss " + str(loss))
                 if pass_count > 0:
@@ -307,44 +314,63 @@ def learner(model):
     loss_record['train_epoch_losses'] = epoch_training_losses
     return loss_record
 
-def loss_fn(inputs, network_output, model):
+def loss_fn(loss_type, inputs, network_output, model, params):
     """L2 loss on position."""
     # build target acceleration
-    world_pos = inputs['world_pos']
-    prev_world_pos = inputs['prev|world_pos']
-    target_world_pos = inputs['target|world_pos']
+    if loss_type == 'cloth':
+        world_pos = inputs['world_pos']
+        prev_world_pos = inputs['prev|world_pos']
+        target_world_pos = inputs['target|world_pos']
 
-    cur_position = world_pos
-    prev_position = prev_world_pos
-    target_position = target_world_pos
-    target_acceleration = target_position - 2 * cur_position + prev_position
-    target_normalized = model.get_output_normalizer()(target_acceleration).to(device)
+        cur_position = world_pos
+        prev_position = prev_world_pos
+        target_position = target_world_pos
+        target_acceleration = target_position - 2 * cur_position + prev_position
+        target_normalized = model.get_output_normalizer()(target_acceleration).to(device)
 
-    # build loss
-    node_type = inputs['node_type']
-    loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
-    error = torch.sum((target_normalized - network_output) ** 2, dim=1)
-    loss = torch.mean(error[loss_mask])
-    return loss
+        # build loss
+        node_type = inputs['node_type']
+        loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
+        error = torch.sum((target_normalized - network_output) ** 2, dim=1)
+        loss = torch.mean(error[loss_mask])
+        return loss
+    elif loss_type == 'cfd':
+        cur_velocity = inputs['velocity']
+        target_velocity = inputs['target|velocity']
+        target_velocity_change = target_velocity - cur_velocity
+        target_normalized = model.get_output_normalizer()(target_velocity_change).to(device)
+
+        # build loss
+        node_type = inputs['node_type']
+        loss_mask = torch.logical_or(torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device)), torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OUTFLOW.value], device=device)))
+        error = torch.sum((target_normalized - network_output) ** 2, dim=1)
+        loss = torch.mean(error[loss_mask])
+        return loss
 
 def evaluator(params, model):
     root_logger = logging.getLogger()
+    model_type = FLAGS.model
     """Run a model rollout trajectory."""
     ds_loader = dataset.load_dataset(FLAGS.dataset_dir, FLAGS.rollout_split, add_targets=True)
     ds_iterator = iter(ds_loader)
     trajectories = []
+
 
     mse_losses = []
     l1_losses = []
     for index in range(FLAGS.num_rollouts):
         root_logger.info("Evaluating trajectory " + str(index + 1))
         trajectory = next(ds_iterator)
-        trajectory = process_trajectory(trajectory, True)
+        trajectory = process_trajectory(trajectory, params, model_type, True)
         _, prediction_trajectory = params['evaluator'].evaluate(model, trajectory)
         mse_loss_fn = torch.nn.MSELoss()
         l1_loss_fn = torch.nn.L1Loss()
-        mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
-        l1_loss = l1_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
+        if model_type == 'cloth':
+            mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
+            l1_loss = l1_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
+        elif model_type == 'cfd':
+            mse_loss = mse_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
+            l1_loss = l1_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
         mse_losses.append(mse_loss)
         l1_losses.append(l1_loss)
         root_logger.info("    trajectory evaluation mse loss")
@@ -433,7 +459,10 @@ def main(argv):
             model.load_model(os.path.join(FLAGS.model_last_checkpoint_dir, "model_checkpoint"))
             root_logger.info("Loaded checkpoint file in " + str(FLAGS.model_last_checkpoint_dir) + "and starting retraining...")
         model.to(device)
-        train_loss_record = learner(model)
+        root_logger.info("Simulation model is " + str(FLAGS.model))
+        root_logger.info("Core model is " + model.get_core_model_name())
+        root_logger.info("Message passing steps are " + model.get_message_passing_steps())
+        train_loss_record = learner(model, params)
         root_logger.info("Finished training......")
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         root_logger.info("Start evaluating......")
@@ -442,25 +471,19 @@ def main(argv):
         root_logger.info("Loaded model from " + str(run_dir))
         model.evaluate()
         model.to(device)
+        root_logger.info("Core model is " + model.get_core_model_name())
+        root_logger.info("Message passing steps are " + model.get_message_passing_steps())
         eval_loss_record = evaluator(params, model)
         root_logger.info("Finished evaluating......")
-    if FLAGS.mode == 'test_gcn':
-        print("Start all of test_gcn......")
-        model = PyG_GCN.Model()
-        model.to(device)
-        learner(model)
-        model = PyG_GCN.Model()
-        model.load_model(FLAGS.checkpoint_dir + "model_checkpoint.pth")
-        model.to(device)
-        model.evaluate()
-        evaluator(params, model)
-        print("Finished all......")
     end = time.time()
     end_datetime = datetime.datetime.fromtimestamp(end).strftime('%c')
     root_logger.info("Program ended at time " + end_datetime)
     root_logger.info("Finished FLAGS.mode " + FLAGS.mode)
     elapsed_time_in_second = end - start
     elapsed_time = str(datetime.timedelta(seconds=elapsed_time_in_second))
+    root_logger.info("Simulation model is " + str(FLAGS.model))
+    root_logger.info("Core model is " + model.get_core_model_name())
+    root_logger.info("Message passing steps are " + model.get_message_passing_steps())
     root_logger.info("Elapsed time " + elapsed_time)
     root_logger.info("--------------------train loss record--------------------")
     if FLAGS.mode == "train" or FLAGS.mode == "all":
