@@ -133,7 +133,7 @@ class GraphNetBlock(nn.Module):
               result.add(add_intermediate)
             features.append(result)
             '''
-        features = torch.cat(features, axis=-1)
+        features = torch.cat(features, dim=-1)
         return self._node_model(features)
 
     def forward(self, graph):
@@ -216,7 +216,7 @@ class EncodeProcessDecode(nn.Module):
                  output_size,
                  latent_size,
                  num_layers,
-                 message_passing_steps):
+                 message_passing_steps, message_passing_aggregator):
         super().__init__()
         self._latent_size = latent_size
         self._output_size = output_size

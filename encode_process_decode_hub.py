@@ -22,11 +22,13 @@ from collections import OrderedDict
 import functools
 import torch
 from torch import nn as nn
+import torch_scatter
 import torch.nn.functional as F
 
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])
-MultiGraph = collections.namedtuple('Graph', ['node_features', 'edge_sets', 'world_pos', 'mesh_pos'])
+MultiGraph = collections.namedtuple('Graph', ['node_features', 'edge_sets'])
+MultiGraphWithPos = collections.namedtuple('Graph', ['node_features', 'edge_sets', 'world_pos', 'mesh_pos'])
 
 device = torch.device('cuda')
 
@@ -51,10 +53,11 @@ class LazyMLP(nn.Module):
 class GraphNetBlock(nn.Module):
     """Multi-Edge Interaction Network with residual connections."""
 
-    def __init__(self, model_fn, output_size):
+    def __init__(self, model_fn, output_size, message_passing_aggregator):
         super().__init__()
         self.edge_model = model_fn(output_size)
         self.node_model = model_fn(output_size)
+        self.message_passing_aggregator = message_passing_aggregator
 
     def _update_edge_features(self, node_features, edge_set):
         """Aggregrates node features, and applies edge function."""
@@ -74,7 +77,7 @@ class GraphNetBlock(nn.Module):
         return add_intermediate
     '''
 
-    def unsorted_segment_sum(self, data, segment_ids, num_segments):
+    def unsorted_segment_operation(self, data, segment_ids, num_segments, operation):
         """
         Computes the sum along segments of a tensor. Analogous to tf.unsorted_segment_sum.
 
@@ -93,17 +96,24 @@ class GraphNetBlock(nn.Module):
         assert data.shape == segment_ids.shape, "data.shape and segment_ids.shape should be equal"
 
         shape = [num_segments] + list(data.shape[1:])
-        zeros = torch.zeros(*shape).to(device)
-        tensor = zeros.scatter_add(0, segment_ids.to(device), data.float().to(device))
-        tensor = tensor.type(data.dtype)
-        return tensor
+        result = torch.zeros(*shape)
+        if operation == 'add':
+            result = torch_scatter.scatter_add(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'max':
+            result, _ = torch_scatter.scatter_max(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'mean':
+            result = torch_scatter.scatter_mean(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'min':
+            result, _ = torch_scatter.scatter_min(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        result = result.type(data.dtype)
+        return result
 
     def _update_node_features(self, node_features, edge_sets):
         """Aggregrates edge features, and applies node function."""
         num_nodes = node_features.shape[0]
         features = [node_features]
         for edge_set in edge_sets:
-            features.append(self.unsorted_segment_sum(edge_set.features, edge_set.receivers, num_nodes))
+            features.append(self.unsorted_segment_operation(edge_set.features, edge_set.receivers, num_nodes, operation=self.message_passing_aggregator))
             '''
             add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1])
             for index, feature_tensor in enumerate(edge_set.features.to('cpu')):
@@ -129,7 +139,7 @@ class GraphNetBlock(nn.Module):
               result.add(add_intermediate)
             features.append(result)
             '''
-        features = torch.cat(features, axis=-1)
+        features = torch.cat(features, dim=-1)
         return self.node_model(features)
 
     def forward(self, graph):
@@ -173,7 +183,7 @@ class Encoder(nn.Module):
             feature = edge_set.features
             latent = self.mesh_edge_model(feature)
             new_edges_sets.append(edge_set._replace(features=latent))
-        return MultiGraph(node_latents, new_edges_sets, world_pos=graph.world_pos, mesh_pos=graph.mesh_pos)
+        return MultiGraph(node_latents, new_edges_sets)
 
 
 class Decoder(nn.Module):
@@ -192,14 +202,24 @@ class Decoder(nn.Module):
 
 
 class Processor(nn.Module):
-    def __init__(self, make_mlp, output_size, message_passing_steps):
+    '''
+    This class takes the nodes with the most influential feature (sum of square)
+    The the chosen numbers of nodes in each ripple will establish connection(features and distances) with the most influential nodes and this connection will be learned
+    Then the result is add to output latent graph of encoder and the modified latent graph will be feed into original processor
+
+    Option: choose whether to normalize the high rank node connection
+    '''
+
+    def __init__(self, make_mlp, output_size, message_passing_steps, message_passing_aggregator, normalize_high_rank_node_connection):
         super().__init__()
         self._submodules_ordered_dict = OrderedDict()
         for index in range(message_passing_steps):
-            self._submodules_ordered_dict[str(index)] = GraphNetBlock(model_fn=make_mlp, output_size=output_size)
+            self._submodules_ordered_dict[str(index)] = GraphNetBlock(model_fn=make_mlp, output_size=output_size, message_passing_aggregator=message_passing_aggregator)
         self.submodules = nn.Sequential(self._submodules_ordered_dict)
         # ripple model will learn ripple influence based on source feature and source-destination distance
         self.ripple_model = make_mlp(output_size)
+        if normalize_high_rank_node_connection:
+            self.ripple_model = nn.Sequential(nn.LayerNorm(normalized_shape=17), self.ripple_model)
 
     def forward(self, latent_graph, graph):
         # get graph node features with the highest velocity
@@ -213,7 +233,6 @@ class Processor(nn.Module):
         highest_velocity_node_feature = velocity_matrix[sort_indices[0]]
         highest_velocity_node_world_pos = world_pos_matrix[sort_indices[0]]
         highest_velocity_node_mesh_pos = mesh_pos_matrix[sort_indices[0]]
-        print("highest velocity node feature shape", highest_velocity_node_feature.shape)
 
         # get all nodes that need to establish a connection with highest_velocity_node from velocity_matrix
         ripples = 4
@@ -225,11 +244,12 @@ class Processor(nn.Module):
         ripple_nodes_mesh_pos = []
         for i in range(ripples):
             start_index = i * chunk_size
-            actual_chunk_size = chunk_size if start_index + chunk_size <= sort_indices.shape[0] else sort_indices.shape[0] - start_index
+            actual_chunk_size = chunk_size if start_index + chunk_size <= sort_indices.shape[0] else sort_indices.shape[
+                                                                                                         0] - start_index
             end_index = start_index + actual_chunk_size
             actual_ripple_size = ripple_size if ripple_size <= actual_chunk_size else actual_chunk_size
             random_select_mask = torch.randperm(n=actual_chunk_size)
-            random_select_mask = random_select_mask[actual_ripple_size]
+            random_select_mask = random_select_mask[0:actual_ripple_size]
             info_of_a_ripple = velocity_matrix[start_index:end_index]
             info_of_a_ripple = info_of_a_ripple[random_select_mask]
             ripple_nodes_feature.append(info_of_a_ripple)
@@ -241,22 +261,23 @@ class Processor(nn.Module):
             info_of_a_ripple = mesh_pos_matrix[start_index:end_index]
             info_of_a_ripple = info_of_a_ripple[random_select_mask]
             ripple_nodes_mesh_pos.append(info_of_a_ripple)
-        ripple_nodes_feature = torch.stack(ripple_nodes_feature, dim=0)
-        print("ripple_nodes_feature shape", ripple_nodes_feature.shape)
-        ripple_nodes_index = torch.stack(ripple_nodes_index, dim=0)
-        ripple_nodes_world_pos = torch.stack(ripple_nodes_world_pos, dim=0)
-        ripple_nodes_mesh_pos = torch.stack(ripple_nodes_mesh_pos, dim=0)
+        ripple_nodes_feature = torch.cat(ripple_nodes_feature, dim=0)
+        ripple_nodes_index = torch.cat(ripple_nodes_index, dim=0)
+        ripple_nodes_world_pos = torch.cat(ripple_nodes_world_pos, dim=0)
+        ripple_nodes_mesh_pos = torch.cat(ripple_nodes_mesh_pos, dim=0)
 
         relative_world_pos = torch.sub(ripple_nodes_world_pos, highest_velocity_node_world_pos)
         relative_mesh_pos = torch.sub(ripple_nodes_mesh_pos, highest_velocity_node_mesh_pos)
 
-        print("highest velocity node feature shape before repeat", highest_velocity_node_feature.shape)
-        print("highest velocity node feature shape", torch.unsqueeze(highest_velocity_node_feature, dim=0).repeat(ripple_nodes_feature.shape[0].shape))
-        ripple_and_highest_info = torch.cat((highest_velocity_node_feature.repeat(ripple_nodes_feature.shape[0]), ripple_nodes_feature, relative_world_pos, relative_mesh_pos), dim=-1)
+        ripple_and_highest_info = torch.cat((highest_velocity_node_feature.repeat(ripple_nodes_feature.shape[0],
+                                                                                  highest_velocity_node_feature.shape[
+                                                                                      0]), ripple_nodes_feature,
+                                             relative_world_pos, relative_mesh_pos), dim=-1)
         ripple_and_highest_result = self.ripple_model(ripple_and_highest_info)
         latent_graph.node_features[ripple_nodes_index] += ripple_and_highest_result
 
         return self.submodules(latent_graph)
+
 
 class EncodeProcessDecode(nn.Module):
     """Encode-Process-Decode GraphNet model."""
@@ -265,15 +286,18 @@ class EncodeProcessDecode(nn.Module):
                  output_size,
                  latent_size,
                  num_layers,
-                 message_passing_steps):
+                 message_passing_steps, message_passing_aggregator):
         super().__init__()
         self._latent_size = latent_size
         self._output_size = output_size
         self._num_layers = num_layers
         self._message_passing_steps = message_passing_steps
+        self._message_passing_aggregator = message_passing_aggregator
         self.encoder = Encoder(make_mlp=self._make_mlp, latent_size=self._latent_size)
         self.processor = Processor(make_mlp=self._make_mlp, output_size=self._latent_size,
-                                   message_passing_steps=self._message_passing_steps)
+                                   message_passing_steps=self._message_passing_steps,
+                                   message_passing_aggregator=self._message_passing_aggregator,
+                                   normalize_high_rank_node_connection=True)
         self.decoder = Decoder(make_mlp=functools.partial(self._make_mlp, layer_norm=False),
                                output_size=self._output_size)
 

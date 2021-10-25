@@ -45,22 +45,28 @@ import datetime
 device = torch.device('cuda')
 
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('mode', 'eval', ['train', 'eval', 'all', 'test_gcn'],
-                  'Train model, or run evaluation.')
-flags.DEFINE_enum('model', 'cfd', ['cfd', 'cloth'],
+flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
                   'Select model to run.')
+flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
+                  'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 25, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 10, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
+flags.DEFINE_enum('core_model', 'encode_process_decode_hub',
+                  ['encode_process_decode', 'encode_process_decode_max_pooling', 'encode_process_decode_lstm',
+                   'encode_process_decode_graph_structure_watcher', 'encode_process_decode_hub'],
+                  'Core model to be used')
+flags.DEFINE_enum('message_passing_aggregator', 'mean', ['add', 'max', 'min', 'mean'], 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 7, 'No. of training epochs')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
 start_datetime_dash = start_datetime.replace(" ", "-").replace(":", "-")
 
 root_dir = pathlib.Path(__file__).parent.resolve()
-dataset_name = 'cylinder_flow'
+dataset_name = 'flag_simple'
 dataset_dir = os.path.join(root_dir, 'data', dataset_name)
 output_dir = os.path.join(root_dir, 'output', dataset_name)
 run_dir = os.path.join(output_dir, start_datetime_dash)
@@ -103,10 +109,12 @@ shapes = {}
 dtypes = {}
 types = {}
 
+
 def squeeze_data_frame(data_frame):
     for k, v in data_frame.items():
         data_frame[k] = torch.squeeze(v, 0)
     return data_frame
+
 
 def add_targets(params):
     """Adds target and optionally history fields to dataframe."""
@@ -124,6 +132,7 @@ def add_targets(params):
         return out
 
     return fn
+
 
 def split_and_preprocess(params, model_type):
     """Splits trajectories into frames, and adds training noise."""
@@ -176,7 +185,9 @@ def split_and_preprocess(params, model_type):
             noisy_trajectory_step = add_noise(trajectory_step)
             trajectory_steps.append(noisy_trajectory_step)
         return trajectory_steps
+
     return element_operation
+
 
 def process_trajectory(trajectory_data, params, model_type, add_targets_bool=False, split_and_preprocess_bool=False):
     global loaded_meta
@@ -218,6 +229,7 @@ def process_trajectory(trajectory_data, params, model_type, add_targets_bool=Fal
         trajectory = split_and_preprocess(params, model_type)(trajectory)
     return trajectory
 
+
 def learner(model, params):
     # handles dataset preprocessing, model definition, training process definition and model training
 
@@ -256,8 +268,9 @@ def learner(model, params):
     count = 0
     pass_count = 500
     for epoch in range(FLAGS.epochs - trained_epoch):
-        ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', batch_size=batch_size, prefetch_factor=prefetch_factor,
-                                     add_targets=True, split_and_preprocess=True)
+        ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', batch_size=batch_size,
+                                         prefetch_factor=prefetch_factor,
+                                         add_targets=True, split_and_preprocess=True)
         # every time when model.train is called, model will train itself with the whole dataset
         root_logger.info("Epoch " + str(epoch + 1) + "/" + str(FLAGS.epochs))
         epoch_training_loss = 0.0
@@ -299,11 +312,13 @@ def learner(model, params):
         model.save_model(
             os.path.join(FLAGS.checkpoint_dir, "epoch_model_checkpoint" + "_" + str((trajectory_index + 1) % 2)))
         torch.save(optimizer.state_dict(),
-                   os.path.join(FLAGS.checkpoint_dir, "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
+                   os.path.join(FLAGS.checkpoint_dir,
+                                "epoch_optimizer_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         torch.save(scheduler.state_dict(),
-                   os.path.join(FLAGS.checkpoint_dir, "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
+                   os.path.join(FLAGS.checkpoint_dir,
+                                "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
         if epoch == 25:
-           scheduler.step()
+            scheduler.step()
         torch.save({'epoch': epoch}, os.path.join(FLAGS.checkpoint_dir, "epoch_checkpoint.pth"))
     model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint"))
     torch.save(optimizer.state_dict(), os.path.join(FLAGS.checkpoint_dir, "optimizer_checkpoint.pth"))
@@ -313,6 +328,7 @@ def learner(model, params):
     loss_record['train_mean_epoch_loss'] = torch.mean(torch.stack(epoch_training_losses))
     loss_record['train_epoch_losses'] = epoch_training_losses
     return loss_record
+
 
 def loss_fn(loss_type, inputs, network_output, model, params):
     """L2 loss on position."""
@@ -342,10 +358,13 @@ def loss_fn(loss_type, inputs, network_output, model, params):
 
         # build loss
         node_type = inputs['node_type']
-        loss_mask = torch.logical_or(torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device)), torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OUTFLOW.value], device=device)))
+        loss_mask = torch.logical_or(
+            torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device)),
+            torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OUTFLOW.value], device=device)))
         error = torch.sum((target_normalized - network_output) ** 2, dim=1)
         loss = torch.mean(error[loss_mask])
         return loss
+
 
 def evaluator(params, model):
     root_logger = logging.getLogger()
@@ -354,7 +373,6 @@ def evaluator(params, model):
     ds_loader = dataset.load_dataset(FLAGS.dataset_dir, FLAGS.rollout_split, add_targets=True)
     ds_iterator = iter(ds_loader)
     trajectories = []
-
 
     mse_losses = []
     l1_losses = []
@@ -454,19 +472,36 @@ def main(argv):
 
     if FLAGS.mode == 'train' or FLAGS.mode == 'all':
         root_logger.info("Start training......")
-        model = params['model'].Model(params)
+        model = params['model'].Model(params, FLAGS.core_model, FLAGS.message_passing_aggregator,
+                                      FLAGS.message_passing_steps)
         if FLAGS.model_last_checkpoint_dir is not None:
             model.load_model(os.path.join(FLAGS.model_last_checkpoint_dir, "model_checkpoint"))
-            root_logger.info("Loaded checkpoint file in " + str(FLAGS.model_last_checkpoint_dir) + "and starting retraining...")
+            root_logger.info(
+                "Loaded checkpoint file in " + str(FLAGS.model_last_checkpoint_dir) + "and starting retraining...")
         model.to(device)
+
+        # run summary
+        root_logger.info("")
+        root_logger.info("=======================Run Summary=======================")
         root_logger.info("Simulation model is " + str(FLAGS.model))
+        root_logger.info("Finished FLAGS.mode " + FLAGS.mode)
+        if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
+            root_logger.info("Evaluation set is " + FLAGS.rollout_split)
+        elif FLAGS.mode == 'train':
+            root_logger.info("No Evaluation")
         root_logger.info("Core model is " + model.get_core_model_name())
+        root_logger.info("Message passing aggregator is " + model.get_message_passing_aggregator())
         root_logger.info("Message passing steps are " + model.get_message_passing_steps())
+        root_logger.info("Run output directory is " + run_dir)
+        root_logger.info("=======================Run Summary=======================")
+        root_logger.info("")
+
         train_loss_record = learner(model, params)
         root_logger.info("Finished training......")
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         root_logger.info("Start evaluating......")
-        model = params['model'].Model(params)
+        model = params['model'].Model(params, FLAGS.core_model, FLAGS.message_passing_aggregator,
+                                      FLAGS.message_passing_steps)
         model.load_model(os.path.join(run_dir, "checkpoint_dir", "model_checkpoint"))
         root_logger.info("Loaded model from " + str(run_dir))
         model.evaluate()
@@ -478,18 +513,31 @@ def main(argv):
     end = time.time()
     end_datetime = datetime.datetime.fromtimestamp(end).strftime('%c')
     root_logger.info("Program ended at time " + end_datetime)
-    root_logger.info("Finished FLAGS.mode " + FLAGS.mode)
     elapsed_time_in_second = end - start
     elapsed_time = str(datetime.timedelta(seconds=elapsed_time_in_second))
+
+    # run summary
+    root_logger.info("")
+    root_logger.info("=======================Run Summary=======================")
     root_logger.info("Simulation model is " + str(FLAGS.model))
+    root_logger.info("Finished FLAGS.mode " + FLAGS.mode)
+    if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
+        root_logger.info("Evaluation set is " + FLAGS.rollout_split)
+    elif FLAGS.mode == 'train':
+        root_logger.info("No Evaluation")
     root_logger.info("Core model is " + model.get_core_model_name())
+    root_logger.info("Message passing aggregator is " + model.get_message_passing_aggregator())
     root_logger.info("Message passing steps are " + model.get_message_passing_steps())
     root_logger.info("Elapsed time " + elapsed_time)
+    root_logger.info("Run output directory is " + run_dir)
+    root_logger.info("=======================Run Summary=======================")
+    root_logger.info("")
     root_logger.info("--------------------train loss record--------------------")
     if FLAGS.mode == "train" or FLAGS.mode == "all":
         for item in train_loss_record.items():
             root_logger.info(item)
     root_logger.info("---------------------------------------------------------")
+    root_logger.info("")
     root_logger.info("--------------------eval loss record---------------------")
     if FLAGS.mode == "eval" or FLAGS.mode == "all":
         for item in eval_loss_record.items():

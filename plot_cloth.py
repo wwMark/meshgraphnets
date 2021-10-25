@@ -30,15 +30,15 @@ import matplotlib.pyplot as plt
 import torch
 
 root_dir = pathlib.Path(__file__).parent.resolve()
-output_dir = os.path.join(root_dir, 'output')
+output_dir = os.path.join(root_dir, 'output', 'flag_simple')
 all_subdirs = [os.path.join(output_dir, d) for d in os.listdir(output_dir) if
                os.path.isdir(os.path.join(output_dir, d))]
-latest_subdir = max(all_subdirs, key=os.path.getmtime)
-rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
+# latest_subdir = max(all_subdirs, key=os.path.getmtime)
+# rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 
 FLAGS = flags.FLAGS
-# flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\temp\\rollout.pkl', 'Path to rollout pickle file')
-flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
+flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\benchmark备份\\Fri-Oct-22-10-43-45-2021\\rollout\\rollout.pkl', 'Path to rollout pickle file')
+# flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
 
 
 def main(unused_argv):
@@ -65,7 +65,7 @@ def main(unused_argv):
     def animate(num):
         step = (num * skip) % num_steps
         traj = (num * skip) // num_steps
-        traj = num // num_steps
+        traj = (num * 3) // num_steps
         step = (num * 3) % num_steps
         ax.cla()
         bound = bounds[traj]

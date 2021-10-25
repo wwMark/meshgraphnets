@@ -21,7 +21,7 @@ from collections import OrderedDict
 import functools
 import torch
 from torch import nn as nn
-# from torch import multiprocessing as mp
+import torch_scatter
 
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])
@@ -46,16 +46,15 @@ class LazyMLP(nn.Module):
         y = self.layers(input)
         return y
 
+
 class GraphNetBlock(nn.Module):
     """Multi-Edge Interaction Network with residual connections."""
 
-    def __init__(self, model_fn, output_size):
+    def __init__(self, model_fn, output_size, message_passing_aggregator):
         super().__init__()
         self.edge_model = model_fn(output_size)
         self.node_model = model_fn(output_size)
-        # self._cpu_cores = mp.cpu_count()
-        # self._cpu_cores = 4
-        # self._update_node_features_thread_pool = mp.Pool(self._cpu_cores)
+        self.message_passing_aggregator = message_passing_aggregator
 
     def _update_edge_features(self, node_features, edge_set):
         """Aggregrates node features, and applies edge function."""
@@ -67,15 +66,7 @@ class GraphNetBlock(nn.Module):
         features = torch.cat(features, dim=-1)
         return self.edge_model(features)
 
-    '''
-    def _update_node_features_mp_helper(self, features, receivers, add_intermediate):
-        for index, feature_tensor in enumerate(features):
-            des_index = receivers[index]
-            add_intermediate[des_index].add(feature_tensor)
-        return add_intermediate
-    '''
-
-    def unsorted_segment_sum(self, data, segment_ids, num_segments):
+    def unsorted_segment_operation(self, data, segment_ids, num_segments, operation):
         """
         Computes the sum along segments of a tensor. Analogous to tf.unsorted_segment_sum.
 
@@ -94,43 +85,25 @@ class GraphNetBlock(nn.Module):
         assert data.shape == segment_ids.shape, "data.shape and segment_ids.shape should be equal"
 
         shape = [num_segments] + list(data.shape[1:])
-        zeros = torch.zeros(*shape).to(device)
-        tensor = zeros.scatter_add(0, segment_ids.to(device), data.float().to(device))
-        tensor = tensor.type(data.dtype)
-        return tensor
+        result = torch.zeros(*shape)
+        if operation == 'add':
+            result = torch_scatter.scatter_add(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'max':
+            result, _ = torch_scatter.scatter_max(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'mean':
+            result = torch_scatter.scatter_mean(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'min':
+            result, _ = torch_scatter.scatter_min(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        result = result.type(data.dtype)
+        return result
 
     def _update_node_features(self, node_features, edge_sets):
         """Aggregrates edge features, and applies node function."""
         num_nodes = node_features.shape[0]
         features = [node_features]
         for edge_set in edge_sets:
-            features.append(self.unsorted_segment_sum(edge_set.features, edge_set.receivers, num_nodes))
-            '''
-            add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1])
-            for index, feature_tensor in enumerate(edge_set.features.to('cpu')):
-              des_index = edge_set.receivers[index].to('cpu')
-              add_intermediate[des_index].add(feature_tensor)
-            features.append(add_intermediate)
-            '''
-            '''
-            # use multiprocessing to decrease execution time
-            
-            payload_per_core = edge_set.features.shape[0] // self._cpu_cores
-            argument_list = []
-            for i in range(self._cpu_cores - 1):
-              i = i * payload_per_core
-              add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1]).to(device=cuda0)
-              argument_list.append((edge_set.features[i : i + payload_per_core, : ], edge_set.receivers[i : i + payload_per_core], add_intermediate))
-            i = (self._cpu_cores - 1) * payload_per_core
-            add_intermediate = torch.zeros(num_nodes, edge_set.features.shape[1]).to(device=cuda0)
-            argument_list.append((edge_set.features[i : , : ], edge_set.receivers[i : ], add_intermediate))
-            result_iterable = self._update_node_features_thread_pool.starmap(self._update_node_features_mp_helper, argument_list)
-            result = torch.zeros(num_nodes, edge_set.features.shape[1]).to(device=cuda0)
-            for add_intermediate in result_iterable:
-              result.add(add_intermediate)
-            features.append(result)
-            '''
-        features = torch.cat(features, axis=-1)
+            features.append(self.unsorted_segment_operation(edge_set.features, edge_set.receivers, num_nodes, self.message_passing_aggregator))
+        features = torch.cat(features, dim=-1)
         return self.node_model(features)
 
     def forward(self, graph):
@@ -176,6 +149,7 @@ class Encoder(nn.Module):
             new_edges_sets.append(edge_set._replace(features=latent))
         return MultiGraph(node_latents, new_edges_sets)
 
+
 class Decoder(nn.Module):
     """Decodes node features from graph."""
     # decoder = self._make_mlp(self._output_size, layer_norm=False)
@@ -192,11 +166,11 @@ class Decoder(nn.Module):
 
 
 class Processor(nn.Module):
-    def __init__(self, make_mlp, output_size, message_passing_steps):
+    def __init__(self, make_mlp, output_size, message_passing_steps, message_passing_aggregator):
         super().__init__()
         self._submodules_ordered_dict = OrderedDict()
         for index in range(message_passing_steps):
-            self._submodules_ordered_dict[str(index)] = GraphNetBlock(model_fn=make_mlp, output_size=output_size)
+            self._submodules_ordered_dict[str(index)] = GraphNetBlock(model_fn=make_mlp, output_size=output_size, message_passing_aggregator=message_passing_aggregator)
         self.submodules = nn.Sequential(self._submodules_ordered_dict)
         '''
         super().__init__()
@@ -205,16 +179,8 @@ class Processor(nn.Module):
         '''
 
     def forward(self, graph):
-        # print("Processor----------------")
-        # print("Processor self._submodules", self._submodules)
-        # print(repr(self.modules()))
         return self.submodules(graph)
-        '''
-        latent_graph = graph
-        for _ in range(self._message_passing_steps):
-            latent_graph = self.submodule(latent_graph)
-        return latent_graph
-        '''
+
 
 class EncodeProcessDecode(nn.Module):
     """Encode-Process-Decode GraphNet model."""
@@ -223,17 +189,19 @@ class EncodeProcessDecode(nn.Module):
                  output_size,
                  latent_size,
                  num_layers,
-                 message_passing_steps):
+                 message_passing_steps, message_passing_aggregator):
         super().__init__()
         self._latent_size = latent_size
         self._output_size = output_size
         self._num_layers = num_layers
         self._message_passing_steps = message_passing_steps
+        self._message_passing_aggregator = message_passing_aggregator
         self.encoder = Encoder(make_mlp=self._make_mlp, latent_size=self._latent_size)
         self.processor = Processor(make_mlp=self._make_mlp, output_size=self._latent_size,
-                                    message_passing_steps=self._message_passing_steps)
+                                   message_passing_steps=self._message_passing_steps,
+                                   message_passing_aggregator=self._message_passing_aggregator)
         self.decoder = Decoder(make_mlp=functools.partial(self._make_mlp, layer_norm=False),
-                                output_size=self._output_size)
+                               output_size=self._output_size)
 
     def _make_mlp(self, output_size, layer_norm=True):
         """Builds an MLP."""
@@ -246,6 +214,5 @@ class EncodeProcessDecode(nn.Module):
     def forward(self, graph):
         """Encodes and processes a multigraph, and returns node features."""
         latent_graph = self.encoder(graph)
-        # print("EncodeProcessDecode input graph", graph)
         latent_graph = self.processor(latent_graph)
         return self.decoder(latent_graph)

@@ -35,36 +35,12 @@ def _rollout(model, initial_state, num_steps):
             prediction = model({**initial_state,
                                 'prev|world_pos': prev_pos,
                                 'world_pos': cur_pos}, is_training=False)
-            '''
-            print("prediction")
-            print(prediction[10])
-            '''
-        # memory_next = torch.cuda.memory_allocated(device) / (1024 *1024)
-        # print("memory usage", memory_next - memory_prev)
-        # don't update kinematic nodes
-        '''
-        print("prediction shape")
-        print(prediction.shape)
-        print("cur_pos shape")
-        print(cur_pos.shape)
-        '''
+
         next_pos = torch.where(mask, torch.squeeze(prediction), torch.squeeze(cur_pos))
-        # next_pos = prediction
-        '''
-        print("next_pos shape")
-        print(next_pos.shape)
-        '''
+
         trajectory.append(cur_pos)
         return cur_pos, next_pos, trajectory
 
-    '''
-    _, _, _, output = tf.while_loop(
-        cond=lambda step, last, cur, traj: tf.less(step, num_steps),
-        body=step_fn,
-        loop_vars=(0, initial_state['prev|world_pos'], initial_state['world_pos'],
-                   tf.TensorArray(tf.float32, num_steps)),
-        parallel_iterations=1)
-    '''
     prev_pos = torch.squeeze(initial_state['prev|world_pos'], 0)
     cur_pos = torch.squeeze(initial_state['world_pos'], 0)
     trajectory = []
@@ -75,15 +51,6 @@ def _rollout(model, initial_state, num_steps):
 
 def evaluate(model, trajectory):
     """Performs model rollouts and create stats."""
-    '''
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            print(name)
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            print(param.data)
-    quit()
-    '''
     initial_state = {k: torch.squeeze(v, 0)[0] for k, v in trajectory.items()}
     num_steps = trajectory['cells'].shape[0]
     prediction = _rollout(model, initial_state, num_steps)
@@ -99,5 +66,4 @@ def evaluate(model, trajectory):
         'gt_pos': trajectory['world_pos'],
         'pred_pos': prediction
     }
-    # for step in prediction['world']
     return scalars, traj_ops
