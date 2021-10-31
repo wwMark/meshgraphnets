@@ -26,7 +26,7 @@ import encode_process_decode
 import encode_process_decode_max_pooling
 import encode_process_decode_lstm
 import encode_process_decode_graph_structure_watcher
-import encode_process_decode_hub
+import encode_process_decode_ripple
 
 device = torch.device('cuda')
 
@@ -58,7 +58,7 @@ class Model(nn.Module):
         return {
             'encode_process_decode': encode_process_decode,
             'encode_process_decode_graph_structure_watcher': encode_process_decode_graph_structure_watcher,
-            'encode_process_decode_hub': encode_process_decode_hub,
+            'encode_process_decode_ripple': encode_process_decode_ripple,
             'encode_process_decode_max_pooling': encode_process_decode_max_pooling,
             'encode_process_decode_lstm': encode_process_decode_lstm,
         }.get(core_model_name, encode_process_decode)
@@ -102,7 +102,7 @@ class Model(nn.Module):
             receivers=receivers,
             senders=senders)
 
-        if self.core_model == encode_process_decode_hub:
+        if self.core_model == encode_process_decode_ripple:
             return self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training), edge_sets=[mesh_edges], world_pos=world_pos, mesh_pos=mesh_pos)
         else:
             return self.core_model.MultiGraph(node_features=self._node_normalizer(node_features, is_training), edge_sets=[mesh_edges])

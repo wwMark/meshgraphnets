@@ -51,14 +51,14 @@ flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 25, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 10, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
-flags.DEFINE_enum('core_model', 'encode_process_decode_hub',
+flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
+flags.DEFINE_enum('core_model', 'encode_process_decode_ripple',
                   ['encode_process_decode', 'encode_process_decode_max_pooling', 'encode_process_decode_lstm',
-                   'encode_process_decode_graph_structure_watcher', 'encode_process_decode_hub'],
+                   'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
                   'Core model to be used')
-flags.DEFINE_enum('message_passing_aggregator', 'mean', ['add', 'max', 'min', 'mean'], 'No. of training epochs')
+flags.DEFINE_enum('message_passing_aggregator', 'min', ['add', 'max', 'min', 'mean'], 'No. of training epochs')
 flags.DEFINE_integer('message_passing_steps', 7, 'No. of training epochs')
 
 start = time.time()

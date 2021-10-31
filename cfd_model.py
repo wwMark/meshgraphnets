@@ -26,7 +26,7 @@ import encode_process_decode
 import encode_process_decode_max_pooling
 import encode_process_decode_lstm
 import encode_process_decode_graph_structure_watcher
-import encode_process_decode_hub
+import encode_process_decode_ripple
 
 device = torch.device('cuda')
 
