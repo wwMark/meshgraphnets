@@ -42,6 +42,9 @@ from common import NodeType
 import time
 import datetime
 
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+
 device = torch.device('cuda')
 
 FLAGS = flags.FLAGS
@@ -98,9 +101,9 @@ flags.DEFINE_string('last_checkpoint_file',
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
-                size=2, batch=2, model=cfd_model, evaluator=cfd_eval, loss_type='cfd'),
+                size=2, batch=2, model=cfd_model, evaluator=cfd_eval, loss_type='cfd', stochastic_message_passing_used='True'),
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
-                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval, loss_type='cloth')
+                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval, loss_type='cloth', stochastic_message_passing_used='True')
 }
 
 # output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
@@ -267,6 +270,7 @@ def learner(model, params):
 
     count = 0
     pass_count = 500
+    all_trajectory_train_losses = []
     for epoch in range(FLAGS.epochs - trained_epoch):
         ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', batch_size=batch_size,
                                          prefetch_factor=prefetch_factor,
@@ -292,8 +296,9 @@ def learner(model, params):
                 else:
                     optimizer.zero_grad()
                     loss.backward()
-                    trajectory_loss += loss.detach()
                     optimizer.step()
+                    trajectory_loss += loss.detach().cpu()
+            all_trajectory_train_losses.append(trajectory_loss)
             epoch_training_loss += trajectory_loss
             root_logger.info("        trajectory_loss")
             root_logger.info("        " + str(trajectory_loss))
@@ -327,6 +332,7 @@ def learner(model, params):
     loss_record['train_total_loss'] = torch.sum(torch.stack(epoch_training_losses))
     loss_record['train_mean_epoch_loss'] = torch.mean(torch.stack(epoch_training_losses))
     loss_record['train_epoch_losses'] = epoch_training_losses
+    loss_record['all_trajectory_train_losses'] = all_trajectory_train_losses
     return loss_record
 
 
@@ -389,8 +395,8 @@ def evaluator(params, model):
         elif model_type == 'cfd':
             mse_loss = mse_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
             l1_loss = l1_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
-        mse_losses.append(mse_loss)
-        l1_losses.append(l1_loss)
+        mse_losses.append(mse_loss.cpu())
+        l1_losses.append(l1_loss.cpu())
         root_logger.info("    trajectory evaluation mse loss")
         root_logger.info("    " + str(mse_loss))
         root_logger.info("    trajectory evaluation l1 loss")
@@ -412,6 +418,8 @@ def evaluator(params, model):
     loss_record['eval_l1_losses'] = l1_losses
     return loss_record
 
+def plot_data(data):
+    return None
 
 def main(argv):
     global run_dir
@@ -490,8 +498,10 @@ def main(argv):
         elif FLAGS.mode == 'train':
             root_logger.info("No Evaluation")
         root_logger.info("Core model is " + model.get_core_model_name())
+        root_logger.info("Core model config is " + str(model.get_core_model_config()))
         root_logger.info("Message passing aggregator is " + model.get_message_passing_aggregator())
         root_logger.info("Message passing steps are " + model.get_message_passing_steps())
+        root_logger.info("Stochastic message passing used is " + model.get_stochastic_message_passing_used())
         root_logger.info("Run output directory is " + run_dir)
         root_logger.info("=======================Run Summary=======================")
         root_logger.info("")
@@ -507,7 +517,9 @@ def main(argv):
         model.evaluate()
         model.to(device)
         root_logger.info("Core model is " + model.get_core_model_name())
+        root_logger.info("Core model config is " + str(model.get_core_model_config()))
         root_logger.info("Message passing steps are " + model.get_message_passing_steps())
+        root_logger.info("Stochastic message passing used is " + model.get_stochastic_message_passing_used())
         eval_loss_record = evaluator(params, model)
         root_logger.info("Finished evaluating......")
     end = time.time()
@@ -526,23 +538,77 @@ def main(argv):
     elif FLAGS.mode == 'train':
         root_logger.info("No Evaluation")
     root_logger.info("Core model is " + model.get_core_model_name())
+    root_logger.info("Core model config is " + str(model.get_core_model_config()))
     root_logger.info("Message passing aggregator is " + model.get_message_passing_aggregator())
     root_logger.info("Message passing steps are " + model.get_message_passing_steps())
+    root_logger.info("Stochastic message passing used is " + model.get_stochastic_message_passing_used())
     root_logger.info("Elapsed time " + elapsed_time)
     root_logger.info("Run output directory is " + run_dir)
     root_logger.info("=======================Run Summary=======================")
     root_logger.info("")
     root_logger.info("--------------------train loss record--------------------")
     if FLAGS.mode == "train" or FLAGS.mode == "all":
+        train_loss_pkl_file = os.path.join(FLAGS.logging_dir, 'train_loss.pkl')
+        Path(train_loss_pkl_file).touch()
+        with open(train_loss_pkl_file, 'wb') as f:
+            pickle.dump(train_loss_record, f)
         for item in train_loss_record.items():
             root_logger.info(item)
     root_logger.info("---------------------------------------------------------")
     root_logger.info("")
     root_logger.info("--------------------eval loss record---------------------")
     if FLAGS.mode == "eval" or FLAGS.mode == "all":
+        eval_loss_pkl_file = os.path.join(FLAGS.logging_dir, 'eval_loss.pkl')
+        Path(eval_loss_pkl_file).touch()
+        with open(eval_loss_pkl_file, 'wb') as f:
+            pickle.dump(eval_loss_record, f)
         for item in eval_loss_record.items():
             root_logger.info(item)
     root_logger.info("---------------------------------------------------------")
+
+    fig = plt.figure(figsize=(19.2, 10.8), constrained_layout=True)
+    gs = fig.add_gridspec(3, 3)
+    fig.suptitle('Train and Evaluation Losses', fontsize=18)
+    if FLAGS.mode == 'train' or FLAGS.mode == 'all':
+        train_loss_ax = fig.add_subplot(gs[0, 0])
+        all_trajectory_train_losses_ax = fig.add_subplot(gs[1:3, 0:])
+
+        train_loss_ax.set_title('Train Loss')
+        train_loss_ax.set_xlabel('epoch')
+        train_loss_ax.set_ylabel('loss')
+
+        all_trajectory_train_losses_ax.set_title('Train trajectory Loss')
+        all_trajectory_train_losses_ax.set_xlabel('trajectory no.')
+        all_trajectory_train_losses_ax.set_ylabel('loss')
+
+        train_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
+        train_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
+
+        all_trajectory_train_losses_ax.xaxis.set_major_locator(ticker.AutoLocator())
+        all_trajectory_train_losses_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
+
+        train_loss_ax.plot(train_loss_record['train_epoch_losses'])
+        all_trajectory_train_losses_ax.plot(train_loss_record['all_trajectory_train_losses'])
+    if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
+        eval_mse_loss_ax = fig.add_subplot(gs[0, 1])
+        eval_l1_loss_ax = fig.add_subplot(gs[0, 2])
+
+        eval_mse_loss_ax.set_title('Eval MSE Loss')
+        eval_mse_loss_ax.set_xlabel('rollout no.')
+        eval_mse_loss_ax.set_ylabel('loss')
+
+        eval_l1_loss_ax.set_title('Eval L1 Loss')
+        eval_l1_loss_ax.set_xlabel('rollout no.')
+        eval_l1_loss_ax.set_ylabel('loss')
+
+        eval_mse_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
+        eval_mse_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
+        eval_l1_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
+        eval_l1_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
+
+        eval_mse_loss_ax.plot(eval_loss_record['eval_mse_losses'])
+        eval_l1_loss_ax.plot(eval_loss_record['eval_l1_losses'])
+    fig.savefig(os.path.join(run_dir, "logs", "Train_and_Eval_Loss.png"))
 
 
 if __name__ == '__main__':

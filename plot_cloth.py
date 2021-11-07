@@ -75,9 +75,11 @@ def main(unused_argv):
         ax.set_zlim([bound[0][2], bound[1][2]])
 
         pos = torch.squeeze(rollout_data[traj]['pred_pos'], dim=0)[step].to('cpu')
+        original_pos = torch.squeeze(rollout_data[traj]['gt_pos'], dim=0)[step].to('cpu')
         # print(pos[10])
         faces = torch.squeeze(rollout_data[traj]['faces'], dim=0)[step].to('cpu')
         ax.plot_trisurf(pos[:, 0], pos[:, 1], faces, pos[:, 2], shade=True)
+        ax.plot_trisurf(original_pos[:, 0], original_pos[:, 1], faces, original_pos[:, 2], shade=True)
         ax.set_title('Trajectory %d Step %d' % (traj, step))
         return fig,
 

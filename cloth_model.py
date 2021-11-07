@@ -19,6 +19,7 @@
 import torch
 from torch import nn as nn
 import torch.nn.functional as F
+from torch_cluster import random_walk
 
 import common
 import normalization
@@ -29,6 +30,7 @@ import encode_process_decode_graph_structure_watcher
 import encode_process_decode_ripple
 
 device = torch.device('cuda')
+
 
 class Model(nn.Module):
     """Model for static cloth simulation."""
@@ -42,17 +44,24 @@ class Model(nn.Module):
         self._edge_normalizer = normalization.Normalizer(
             size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
+        # for stochastic message passing
+        self.random_walk_generation_interval = 399
+        self.input_count = 0
+        self.sto_mat = None
+        self.normalized_adj_mat = None
 
         self.core_model_name = core_model_name
         self.core_model = self.select_core_model(core_model_name)
         self.message_passing_steps = message_passing_steps
         self.message_passing_aggregator = message_passing_aggregator
+        self.stochastic_message_passing_used = self._params['stochastic_message_passing_used']
         self.learned_model = self.core_model.EncodeProcessDecode(
             output_size=params['size'],
             latent_size=128,
             num_layers=2,
             message_passing_steps=self.message_passing_steps,
-            message_passing_aggregator=self.message_passing_aggregator)
+            message_passing_aggregator=self.message_passing_aggregator,
+            stochastic_message_passing_used=self.stochastic_message_passing_used)
 
     def select_core_model(self, core_model_name):
         return {
@@ -66,11 +75,17 @@ class Model(nn.Module):
     def get_core_model_name(self):
         return str(self.core_model)
 
+    def get_core_model_config(self):
+        return self.learned_model.get_core_model_config()
+
     def get_message_passing_steps(self):
         return str(self.message_passing_steps)
 
     def get_message_passing_aggregator(self):
         return str(self.message_passing_aggregator)
+
+    def get_stochastic_message_passing_used(self):
+        return str(self.stochastic_message_passing_used)
 
     def _build_graph(self, inputs, is_training):
         """Builds input graph."""
@@ -78,13 +93,34 @@ class Model(nn.Module):
         prev_world_pos = inputs['prev|world_pos']
         node_type = inputs['node_type']
         velocity = world_pos - prev_world_pos
-        node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE)
+        one_hot_node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE)
 
-        node_features = torch.cat((velocity, node_type), dim=-1)
+        node_features = torch.cat((velocity, one_hot_node_type), dim=-1)
 
         cells = inputs['cells']
-        senders, receivers = common.triangles_to_edges(cells)
+        decomposed_cells = common.triangles_to_edges(cells)
+        senders, receivers = decomposed_cells['two_way_connectivity']
+        '''
+        Stochastic matrix and adjacency matrix
+        Reference: a simple and general graph neural network with stochastic message passing
+        '''
+        if self.stochastic_message_passing_used and self.input_count % self.random_walk_generation_interval == 0:
+            start = torch.tensor(range(node_type.shape[0]), device=device)
+            self.sto_mat = random_walk(receivers, senders, start, walk_length=20)
 
+            adj_index = torch.stack((receivers, senders), dim=0)
+            adj_index = adj_index.tolist()
+            adj_mat = torch.sparse_coo_tensor(adj_index, [1] * receivers.shape[0],
+                                              (node_type.shape[0], node_type.shape[0]), device=device)
+            self_loop_mat = torch.diag(torch.tensor([1.0] * node_type.shape[0], device=device))
+            self_loop_adj_mat = self_loop_mat + adj_mat
+            adj_mat = torch.sparse.sum(adj_mat, dim=1)
+            adj_mat = torch.sqrt(adj_mat).to_dense()
+            square_root_degree_mat = torch.diag(adj_mat)
+            inversed_square_root_degree_mat = torch.inverse(square_root_degree_mat)
+            self.normalized_adj_mat = torch.matmul(inversed_square_root_degree_mat, self_loop_adj_mat)
+            self.normalized_adj_mat = torch.matmul(self.normalized_adj_mat, inversed_square_root_degree_mat)
+        self.input_count += 1
         mesh_pos = inputs['mesh_pos']
         relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
                               torch.index_select(input=world_pos, dim=0, index=receivers))
@@ -103,16 +139,24 @@ class Model(nn.Module):
             senders=senders)
 
         if self.core_model == encode_process_decode_ripple:
-            return self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training), edge_sets=[mesh_edges], world_pos=world_pos, mesh_pos=mesh_pos)
+            return self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training),
+                                                     edge_sets=[mesh_edges], world_pos=world_pos, mesh_pos=mesh_pos)
         else:
-            return self.core_model.MultiGraph(node_features=self._node_normalizer(node_features, is_training), edge_sets=[mesh_edges])
+            return self.core_model.MultiGraph(node_features=self._node_normalizer(node_features, is_training),
+                                              edge_sets=[mesh_edges])
 
     def forward(self, inputs, is_training):
         graph = self._build_graph(inputs, is_training=is_training)
         if is_training:
-            return self.learned_model(graph)
+            if self.stochastic_message_passing_used:
+                return self.learned_model(graph, self.normalized_adj_mat, self.sto_mat)
+            else:
+                return self.learned_model(graph)
         else:
-            return self._update(inputs, self.learned_model(graph))
+            if self.stochastic_message_passing_used:
+                return self._update(inputs, self.learned_model(graph, self.normalized_adj_mat, self.sto_mat))
+            else:
+                return self._update(inputs, self.learned_model(graph))
 
     def _update(self, inputs, per_node_network_output):
         """Integrate model outputs."""
