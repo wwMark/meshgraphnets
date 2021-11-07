@@ -12,11 +12,15 @@ The code in this repository is a PyTorch version of Learning Mesh-Based Simulati
 run on both windows and linux. Development environment is PyCharm 2021.1.3. Package dependencies are defined
 in requirements.txt, please install all dependencies before runnning. The result of this version of MGN network is not 100% conform to the original code, please tune it according to your need. Other GNN networks code will be added to this repository in the future to explore the GNN performance for physical simulation.
 
+## New Features compared to original MeshGraphNets
+
+The novel ripple model, inspired by water ripple, is based on deepmind's meshgraphnets and utilizes ripples to enhance the information propagation. Further new features such as different aggregation methods, attention and stochastic message passing are also already added.
+
 ## Setup
 
 Install dependencies:
 
-    pip install -r meshgraphnets/requirements.txt
+    pip install -r requirements.txt
 
 Download a dataset:
 
