@@ -42,6 +42,8 @@ from common import NodeType
 import time
 import datetime
 
+import matplotlib
+matplotlib.use('AGG')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
@@ -322,7 +324,7 @@ def learner(model, params):
         torch.save(scheduler.state_dict(),
                    os.path.join(FLAGS.checkpoint_dir,
                                 "epoch_scheduler_checkpoint" + "_" + str((epoch + 1) % 2) + ".pth"))
-        if epoch == 25:
+        if epoch == 20:
             scheduler.step()
         torch.save({'epoch': epoch}, os.path.join(FLAGS.checkpoint_dir, "epoch_checkpoint.pth"))
     model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint"))
@@ -567,7 +569,7 @@ def main(argv):
     root_logger.info("---------------------------------------------------------")
 
     fig = plt.figure(figsize=(19.2, 10.8), constrained_layout=True)
-    gs = fig.add_gridspec(3, 3)
+    gs = fig.add_gridspec(4, 3)
     fig.suptitle('Train and Evaluation Losses', fontsize=18)
     if FLAGS.mode == 'train' or FLAGS.mode == 'all':
         train_loss_ax = fig.add_subplot(gs[0, 0])

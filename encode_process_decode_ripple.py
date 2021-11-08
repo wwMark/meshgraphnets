@@ -374,7 +374,7 @@ class EncodeProcessDecode(nn.Module):
         self.ripple_sample_size_generator = 'equal'
         self.num_or_percentage = {'option': 'percentage', 'value': 0.01}
         self.equal_generator_sample_size = 10
-        self.attention = False
+        self.attention = True
         self.stochastic_message_passing_used = stochastic_message_passing_used
         # if self.stochastic_message_passing_used:
         #     self.sto_fuse_model = StochasticFuser(self._make_mlp, self._latent_size)
