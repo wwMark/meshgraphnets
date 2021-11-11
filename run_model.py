@@ -56,15 +56,17 @@ flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
+
+flags.DEFINE_integer('epochs', 25, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
+
 flags.DEFINE_enum('core_model', 'encode_process_decode_ripple',
                   ['encode_process_decode', 'encode_process_decode_max_pooling', 'encode_process_decode_lstm',
                    'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
                   'Core model to be used')
 flags.DEFINE_enum('message_passing_aggregator', 'min', ['add', 'max', 'min', 'mean'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 7, 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 4, 'No. of training epochs')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
@@ -105,7 +107,7 @@ PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
                 size=2, batch=2, model=cfd_model, evaluator=cfd_eval, loss_type='cfd', stochastic_message_passing_used='True'),
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
-                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval, loss_type='cloth', stochastic_message_passing_used='True')
+                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval, loss_type='cloth', stochastic_message_passing_used='False')
 }
 
 # output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')

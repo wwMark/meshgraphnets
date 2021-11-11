@@ -54,7 +54,8 @@ class Model(nn.Module):
         self.core_model = self.select_core_model(core_model_name)
         self.message_passing_steps = message_passing_steps
         self.message_passing_aggregator = message_passing_aggregator
-        self.stochastic_message_passing_used = self._params['stochastic_message_passing_used']
+        # self.stochastic_message_passing_used = self._params['stochastic_message_passing_used']
+        self.stochastic_message_passing_used = False
         self.learned_model = self.core_model.EncodeProcessDecode(
             output_size=params['size'],
             latent_size=128,

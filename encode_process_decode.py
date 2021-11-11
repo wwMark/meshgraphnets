@@ -189,13 +189,14 @@ class EncodeProcessDecode(nn.Module):
                  output_size,
                  latent_size,
                  num_layers,
-                 message_passing_steps, message_passing_aggregator):
+                 message_passing_steps, message_passing_aggregator, stochastic_message_passing_used=False):
         super().__init__()
         self._latent_size = latent_size
         self._output_size = output_size
         self._num_layers = num_layers
         self._message_passing_steps = message_passing_steps
         self._message_passing_aggregator = message_passing_aggregator
+        self.attention = False
         self.encoder = Encoder(make_mlp=self._make_mlp, latent_size=self._latent_size)
         self.processor = Processor(make_mlp=self._make_mlp, output_size=self._latent_size,
                                    message_passing_steps=self._message_passing_steps,
@@ -203,6 +204,8 @@ class EncodeProcessDecode(nn.Module):
         self.decoder = Decoder(make_mlp=functools.partial(self._make_mlp, layer_norm=False),
                                output_size=self._output_size)
 
+    def get_core_model_config(self):
+                 return {'attention': self.attention}
     def _make_mlp(self, output_size, layer_norm=True):
         """Builds an MLP."""
         widths = [self._latent_size] * self._num_layers + [output_size]
