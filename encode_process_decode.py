@@ -118,7 +118,7 @@ class GraphNetBlock(nn.Module):
 
         shape = [num_segments] + list(data.shape[1:])
         result = torch.zeros(*shape)
-        if operation == 'add':
+        if operation == 'sum':
             result = torch_scatter.scatter_add(data.float(), segment_ids, dim=0, dim_size=num_segments)
         elif operation == 'max':
             result, _ = torch_scatter.scatter_max(data.float(), segment_ids, dim=0, dim_size=num_segments)
