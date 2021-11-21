@@ -37,8 +37,8 @@ latest_subdir = max(all_subdirs, key=os.path.getmtime)
 rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('rollout_path', '/home/i53/student/ruoheng_ma/meshgraphnets/output/flag_simple/Thu-Nov-11-10-25-26-2021/rollout/rollout.pkl', 'Path to rollout pickle file')
-# flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
+# flags.DEFINE_string('rollout_path', '/home/i53/student/ruoheng_ma/meshgraphnets/output/flag_simple/Thu-Nov-11-10-25-26-2021/rollout/rollout.pkl', 'Path to rollout pickle file')
+flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
 
 
 def main(unused_argv):
@@ -63,10 +63,10 @@ def main(unused_argv):
         bounds.append((bb_min, bb_max))
 
     def animate(num):
-        step = (num * skip) % num_steps
-        traj = (num * skip) // num_steps
+        # step = (num * skip) % num_steps
+        traj = 7
         # traj = (num * 3) // num_steps
-        # step = (num * 3) % num_steps
+        step = (num * 1) % num_steps
         ax.cla()
         bound = bounds[traj]
 
@@ -79,11 +79,11 @@ def main(unused_argv):
         # print(pos[10])
         faces = torch.squeeze(rollout_data[traj]['faces'], dim=0)[step].to('cpu')
         ax.plot_trisurf(pos[:, 0], pos[:, 1], faces, pos[:, 2], shade=True)
-        ax.plot_trisurf(original_pos[:, 0], original_pos[:, 1], faces, original_pos[:, 2], shade=True)
+        ax.plot_trisurf(original_pos[:, 0], original_pos[:, 1], faces, original_pos[:, 2], shade=True, alpha=0.3)
         ax.set_title('Trajectory %d Step %d' % (traj, step))
         return fig,
 
-    _ = animation.FuncAnimation(fig, animate, frames=num_frames * 100, interval=50)
+    _ = animation.FuncAnimation(fig, animate, frames=num_frames * 100, interval=100)
     plt.show(block=True)
 
 

@@ -42,13 +42,17 @@ from common import NodeType
 import time
 import datetime
 
+import csv
+
 import matplotlib
+
 matplotlib.use('AGG')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
 device = torch.device('cuda')
 
+# train and evaluation configuration
 FLAGS = flags.FLAGS
 flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
                   'Select model to run.')
@@ -57,16 +61,52 @@ flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 
-flags.DEFINE_integer('epochs', 25, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
 
-flags.DEFINE_enum('core_model', 'encode_process_decode_ripple',
+# core model configuration
+flags.DEFINE_enum('core_model', 'encode_process_decode',
                   ['encode_process_decode', 'encode_process_decode_max_pooling', 'encode_process_decode_lstm',
                    'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
                   'Core model to be used')
-flags.DEFINE_enum('message_passing_aggregator', 'min', ['add', 'max', 'min', 'mean'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 4, 'No. of training epochs')
+flags.DEFINE_enum('message_passing_aggregator', 'min', ['sum', 'max', 'min', 'mean'], 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 1, 'No. of training epochs')
+flags.DEFINE_boolean('attention', True, 'whether attention is used or not')
+
+# ripple method configuration
+'''
+ripple_used defines whether ripple is used, if not, core model of original paper will be used
+
+ripple_generation defines how the ripples are generated:
+    equal_size: all ripples have almost equal size of nodes
+    gradient: ripples are generated according to node feature similarity
+    exponential_size: ripples have a size that grows exponentially
+    
+ripple_node_selection defines how the nodes are selected from each ripple:
+    random: a specific number of nodes are selected randomly from each ripple
+    all: all nodes of the ripple are selected
+    top: a specific number of nodes with the most influential features are selected
+
+ripple_node_connection defines how the selected nodes of each ripple connect with each other to propagate message faster:
+    most_influential: the most influential node connects all the other selected nodes
+    fully_connected: all the selected nodes are connected with each other
+    fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
+'''
+flags.DEFINE_boolean('ripple_used', False, 'whether ripple is used or not')
+flags.DEFINE_enum('ripple_generation', 'gradient', ['equal_size', 'gradient', 'exponential_size'],
+                  'defines how ripples are generated')
+flags.DEFINE_integer('ripple_generation_number', 1,
+                     'defines how many ripples should be generated in equal size and gradient ripple generation; or the base in exponential size generation')
+flags.DEFINE_enum('ripple_node_selection', 'random', ['random', 'all', 'top'],
+                  'defines how the nodes are selected from each ripple')
+flags.DEFINE_integer('ripple_node_selection_random_top_n', 1,
+                     'defines how many nodes are selected from each ripple if node selection is random or top')
+flags.DEFINE_enum('ripple_node_connection', 'fully_ncross_connected',
+                  ['most_influential', 'fully_connected', 'fully_ncross_connected'],
+                  'defines how the selected nodes of each ripple connect with each other to propagate message faster')
+flags.DEFINE_integer('ripple_node_ncross', 1,
+                     'defines how many fully cross connections should be generated between ripples')
 
 start = time.time()
 start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
@@ -78,6 +118,7 @@ dataset_dir = os.path.join(root_dir, 'data', dataset_name)
 output_dir = os.path.join(root_dir, 'output', dataset_name)
 run_dir = os.path.join(output_dir, start_datetime_dash)
 
+# directory setting
 flags.DEFINE_string('dataset_dir',
                     dataset_dir,
                     'Directory to load dataset from.')
@@ -105,12 +146,13 @@ flags.DEFINE_string('last_checkpoint_file',
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
-                size=2, batch=2, model=cfd_model, evaluator=cfd_eval, loss_type='cfd', stochastic_message_passing_used='True'),
+                size=2, batch=2, model=cfd_model, evaluator=cfd_eval, loss_type='cfd',
+                stochastic_message_passing_used='False'),
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
-                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval, loss_type='cloth', stochastic_message_passing_used='False')
+                  size=3, batch=1, model=cloth_model, evaluator=cloth_eval, loss_type='cloth',
+                  stochastic_message_passing_used='False')
 }
 
-# output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
 loaded_meta = False
 shapes = {}
 dtypes = {}
@@ -240,14 +282,13 @@ def process_trajectory(trajectory_data, params, model_type, add_targets_bool=Fal
 def learner(model, params):
     # handles dataset preprocessing, model definition, training process definition and model training
 
-    # dataset preprocessing
-    # batch size can be defined in load_dataset. Default to 1.
-
     root_logger = logging.getLogger()
 
     loss_type = params['loss_type']
     model_type = FLAGS.model
 
+    # dataset preprocessing
+    # batch size can be defined in load_dataset. Default to 1.
     batch_size = 1
     prefetch_factor = 2
 
@@ -334,7 +375,9 @@ def learner(model, params):
     torch.save(scheduler.state_dict(), os.path.join(FLAGS.checkpoint_dir, "scheduler_checkpoint.pth"))
     loss_record = {}
     loss_record['train_total_loss'] = torch.sum(torch.stack(epoch_training_losses))
-    loss_record['train_mean_epoch_loss'] = torch.mean(torch.stack(epoch_training_losses))
+    loss_record['train_mean_epoch_loss'] = torch.mean(torch.stack(epoch_training_losses)).item()
+    loss_record['train_max_epoch_loss'] = torch.max(torch.stack(epoch_training_losses)).item()
+    loss_record['train_min_epoch_loss'] = torch.min(torch.stack(epoch_training_losses)).item()
     loss_record['train_epoch_losses'] = epoch_training_losses
     loss_record['all_trajectory_train_losses'] = all_trajectory_train_losses
     return loss_record
@@ -414,16 +457,22 @@ def evaluator(params, model):
     with open(os.path.join(run_dir, "rollout", "rollout.pkl"), 'wb') as fp:
         pickle.dump(trajectories, fp)
     loss_record = {}
-    loss_record['eval_total_mse_loss'] = torch.sum(torch.stack(mse_losses))
-    loss_record['eval_total_l1_loss'] = torch.sum(torch.stack(l1_losses))
-    loss_record['eval_mean_mse_loss'] = torch.mean(torch.stack(mse_losses))
-    loss_record['eval_mean_l1_loss'] = torch.mean(torch.stack(l1_losses))
+    loss_record['eval_total_mse_loss'] = torch.sum(torch.stack(mse_losses)).item()
+    loss_record['eval_total_l1_loss'] = torch.sum(torch.stack(l1_losses)).item()
+    loss_record['eval_mean_mse_loss'] = torch.mean(torch.stack(mse_losses)).item()
+    loss_record['eval_max_mse_loss'] = torch.max(torch.stack(mse_losses)).item()
+    loss_record['eval_min_mse_loss'] = torch.min(torch.stack(mse_losses)).item()
+    loss_record['eval_mean_l1_loss'] = torch.mean(torch.stack(l1_losses)).item()
+    loss_record['eval_max_l1_loss'] = torch.max(torch.stack(l1_losses)).item()
+    loss_record['eval_min_l1_loss'] = torch.min(torch.stack(l1_losses)).item()
     loss_record['eval_mse_losses'] = mse_losses
     loss_record['eval_l1_losses'] = l1_losses
     return loss_record
 
+
 def plot_data(data):
     return None
+
 
 def main(argv):
     global run_dir
@@ -455,7 +504,6 @@ def main(argv):
         all_subdirs = os.listdir(output_dir)
         all_subdirs = map(lambda d: os.path.join(output_dir, d), all_subdirs)
         all_subdirs = [d for d in all_subdirs if os.path.isdir(d)]
-        # all_subdirs = [d for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d))]
         latest_subdir = max(all_subdirs, key=os.path.getmtime)
         run_dir = latest_subdir
         # save program configuration in file title
@@ -469,14 +517,14 @@ def main(argv):
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-    console_output_handler = logging.StreamHandler(sys.stdout)
-    console_output_handler.setLevel(logging.INFO)
+    # console_output_handler = logging.StreamHandler(sys.stdout)
+    # console_output_handler.setLevel(logging.INFO)
     file_log_handler = logging.FileHandler(filename=log_path, mode='w', encoding='utf-8')
     file_log_handler.setLevel(logging.INFO)
     formatter = logging.Formatter(fmt='%(asctime)s - %(message)s')
-    console_output_handler.setFormatter(formatter)
+    # console_output_handler.setFormatter(formatter)
     file_log_handler.setFormatter(formatter)
-    root_logger.addHandler(console_output_handler)
+    # root_logger.addHandler(console_output_handler)
     root_logger.addHandler(file_log_handler)
 
     root_logger.info("Program started at time " + str(start_datetime))
@@ -485,7 +533,11 @@ def main(argv):
     if FLAGS.mode == 'train' or FLAGS.mode == 'all':
         root_logger.info("Start training......")
         model = params['model'].Model(params, FLAGS.core_model, FLAGS.message_passing_aggregator,
-                                      FLAGS.message_passing_steps)
+                                      FLAGS.message_passing_steps, FLAGS.attention, FLAGS.ripple_used,
+                                      FLAGS.ripple_generation, FLAGS.ripple_generation_number,
+                                      FLAGS.ripple_node_selection, FLAGS.ripple_node_selection_random_top_n,
+                                      FLAGS.ripple_node_connection,
+                                      FLAGS.ripple_node_ncross)
         if FLAGS.model_last_checkpoint_dir is not None:
             model.load_model(os.path.join(FLAGS.model_last_checkpoint_dir, "model_checkpoint"))
             root_logger.info(
@@ -495,35 +547,62 @@ def main(argv):
         # run summary
         root_logger.info("")
         root_logger.info("=======================Run Summary=======================")
-        root_logger.info("Simulation model is " + str(FLAGS.model))
+        root_logger.info("Simulation task is " + str(FLAGS.model) + " simulation")
         root_logger.info("Finished FLAGS.mode " + FLAGS.mode)
         if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
             root_logger.info("Evaluation set is " + FLAGS.rollout_split)
         elif FLAGS.mode == 'train':
             root_logger.info("No Evaluation")
-        root_logger.info("Core model is " + model.get_core_model_name())
-        root_logger.info("Core model config is " + str(model.get_core_model_config()))
-        root_logger.info("Message passing aggregator is " + model.get_message_passing_aggregator())
-        root_logger.info("Message passing steps are " + model.get_message_passing_steps())
-        root_logger.info("Stochastic message passing used is " + model.get_stochastic_message_passing_used())
+        root_logger.info(
+            "Train and/or evaluation configuration are " + str(FLAGS.epochs) + " epochs, " + str(FLAGS.trajectories) + " trajectories each epoch, number of rollouts is " + str(FLAGS.num_rollouts))
+        root_logger.info("Core model is " + FLAGS.core_model)
+        root_logger.info("Message passing aggregator is " + FLAGS.message_passing_aggregator)
+        root_logger.info("Message passing steps are " + str(FLAGS.message_passing_steps))
+        root_logger.info("Attention used is " + str(FLAGS.attention))
+        root_logger.info("Ripple used is " + str(FLAGS.ripple_used))
+        if FLAGS.ripple_used:
+            root_logger.info("  Ripple generation method is " + str(FLAGS.ripple_generation))
+            root_logger.info("  Ripple generation number is " + str(FLAGS.ripple_generation_number))
+            root_logger.info("  Ripple node selection method is " + str(FLAGS.ripple_node_selection))
+            root_logger.info("  Ripple node selection number is " + str(FLAGS.ripple_node_selection_random_top_n))
+            root_logger.info("  Ripple node connection method is " + str(FLAGS.ripple_node_connection))
+            root_logger.info("  Ripple node ncross number is " + str(FLAGS.ripple_node_ncross))
         root_logger.info("Run output directory is " + run_dir)
         root_logger.info("=======================Run Summary=======================")
         root_logger.info("")
 
+        train_start = time.time()
         train_loss_record = learner(model, params)
+        train_end = time.time()
+        train_elapsed_time_in_second = train_end - train_start
+        train_mean_elapsed_time = str(datetime.timedelta(seconds=train_elapsed_time_in_second // (FLAGS.epochs * FLAGS.trajectories)))
+        train_elapsed_time = str(datetime.timedelta(seconds=train_elapsed_time_in_second))
+
         root_logger.info("Finished training......")
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         root_logger.info("Start evaluating......")
         model = params['model'].Model(params, FLAGS.core_model, FLAGS.message_passing_aggregator,
-                                      FLAGS.message_passing_steps)
+                                      FLAGS.message_passing_steps, FLAGS.attention, FLAGS.ripple_used,
+                                      FLAGS.ripple_generation, FLAGS.ripple_generation_number,
+                                      FLAGS.ripple_node_selection, FLAGS.ripple_node_selection_random_top_n,
+                                      FLAGS.ripple_node_connection,
+                                      FLAGS.ripple_node_ncross)
         model.load_model(os.path.join(run_dir, "checkpoint_dir", "model_checkpoint"))
         root_logger.info("Loaded model from " + str(run_dir))
         model.evaluate()
         model.to(device)
-        root_logger.info("Core model is " + model.get_core_model_name())
-        root_logger.info("Core model config is " + str(model.get_core_model_config()))
-        root_logger.info("Message passing steps are " + model.get_message_passing_steps())
-        root_logger.info("Stochastic message passing used is " + model.get_stochastic_message_passing_used())
+        root_logger.info("Core model is " + FLAGS.core_model)
+        root_logger.info("Message passing aggregator is " + FLAGS.message_passing_aggregator)
+        root_logger.info("Message passing steps are " + str(FLAGS.message_passing_steps))
+        root_logger.info("Attention used is " + str(FLAGS.attention))
+        root_logger.info("Ripple used is " + str(FLAGS.ripple_used))
+        if FLAGS.ripple_used:
+            root_logger.info("  Ripple generation method is " + str(FLAGS.ripple_generation))
+            root_logger.info("  Ripple generation number is " + str(FLAGS.ripple_generation_number))
+            root_logger.info("  Ripple node selection method is " + str(FLAGS.ripple_node_selection))
+            root_logger.info("  Ripple node selection number is " + str(FLAGS.ripple_node_selection_random_top_n))
+            root_logger.info("  Ripple node connection method is " + str(FLAGS.ripple_node_connection))
+            root_logger.info("  Ripple node ncross number is " + str(FLAGS.ripple_node_ncross))
         eval_loss_record = evaluator(params, model)
         root_logger.info("Finished evaluating......")
     end = time.time()
@@ -541,11 +620,18 @@ def main(argv):
         root_logger.info("Evaluation set is " + FLAGS.rollout_split)
     elif FLAGS.mode == 'train':
         root_logger.info("No Evaluation")
-    root_logger.info("Core model is " + model.get_core_model_name())
-    root_logger.info("Core model config is " + str(model.get_core_model_config()))
-    root_logger.info("Message passing aggregator is " + model.get_message_passing_aggregator())
-    root_logger.info("Message passing steps are " + model.get_message_passing_steps())
-    root_logger.info("Stochastic message passing used is " + model.get_stochastic_message_passing_used())
+    root_logger.info("Core model is " + FLAGS.core_model)
+    root_logger.info("Message passing aggregator is " + FLAGS.message_passing_aggregator)
+    root_logger.info("Message passing steps are " + str(FLAGS.message_passing_steps))
+    root_logger.info("Attention used is " + str(FLAGS.attention))
+    root_logger.info("Ripple used is " + str(FLAGS.ripple_used))
+    if FLAGS.ripple_used:
+        root_logger.info("  Ripple generation method is " + str(FLAGS.ripple_generation))
+        root_logger.info("  Ripple generation number is " + str(FLAGS.ripple_generation_number))
+        root_logger.info("  Ripple node selection method is " + str(FLAGS.ripple_node_selection))
+        root_logger.info("  Ripple node selection number is " + str(FLAGS.ripple_node_selection_random_top_n))
+        root_logger.info("  Ripple node connection method is " + str(FLAGS.ripple_node_connection))
+        root_logger.info("  Ripple node ncross number is " + str(FLAGS.ripple_node_ncross))
     root_logger.info("Elapsed time " + elapsed_time)
     root_logger.info("Run output directory is " + run_dir)
     root_logger.info("=======================Run Summary=======================")
@@ -570,50 +656,206 @@ def main(argv):
             root_logger.info(item)
     root_logger.info("---------------------------------------------------------")
 
-    fig = plt.figure(figsize=(19.2, 10.8), constrained_layout=True)
+    # save result in figure
+    fig = plt.figure(figsize=(38.4, 21.6), constrained_layout=True)
     gs = fig.add_gridspec(4, 3)
-    fig.suptitle('Train and Evaluation Losses', fontsize=18)
+    fig.suptitle('Train and Evaluation Losses', fontsize=32)
+    description = []
+    description.append("Simulation model is " + str(FLAGS.model) + "\n")
+    description.append("Finished FLAGS.mode " + FLAGS.mode + "\n")
+    if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
+        description.append("Evaluation set is " + FLAGS.rollout_split + "\n")
+    elif FLAGS.mode == 'train':
+        description.append("No Evaluation" + "\n")
+    description.append("Core model is " + FLAGS.core_model + "\n")
+    description.append("Message passing aggregator is " + FLAGS.message_passing_aggregator + "\n")
+    description.append("Message passing steps are " + str(FLAGS.message_passing_steps) + "\n")
+    description.append("Attention used is " + str(FLAGS.attention) + "\n")
+    description.append("Ripple used is " + str(FLAGS.ripple_used) + "\n")
+    if FLAGS.ripple_used:
+        description.append("    Ripple generation method is " + str(FLAGS.ripple_generation) + "\n")
+        description.append("    Ripple generation number is " + str(FLAGS.ripple_generation_number) + "\n")
+        description.append("    Ripple node selection method is " + str(FLAGS.ripple_node_selection) + "\n")
+        description.append("    Ripple node selection number is " + str(FLAGS.ripple_node_selection_random_top_n) + "\n")
+        description.append("    Ripple node connection method is " + str(FLAGS.ripple_node_connection) + "\n")
+        description.append("    Ripple node ncross number is " + str(FLAGS.ripple_node_ncross) + "\n")
+    description.append("Elapsed time " + elapsed_time + "\n")
+    description.append("Train mean elapsed time " + train_mean_elapsed_time + "\n")
+    description_txt = ""
+    for item in description:
+        description_txt += item
+    plt.figtext(0.5, 0.01, description_txt, wrap=True, horizontalalignment='left', fontsize=22)
     if FLAGS.mode == 'train' or FLAGS.mode == 'all':
         train_loss_ax = fig.add_subplot(gs[0, 0])
         all_trajectory_train_losses_ax = fig.add_subplot(gs[1:3, 0:])
 
-        train_loss_ax.set_title('Train Loss')
-        train_loss_ax.set_xlabel('epoch')
-        train_loss_ax.set_ylabel('loss')
+        train_loss_ax.set_title('Train Loss', fontsize=28)
+        train_loss_ax.set_xlabel('epoch', fontsize=22)
+        train_loss_ax.set_ylabel('loss', fontsize=22)
 
-        all_trajectory_train_losses_ax.set_title('Train trajectory Loss')
-        all_trajectory_train_losses_ax.set_xlabel('trajectory no.')
-        all_trajectory_train_losses_ax.set_ylabel('loss')
+        all_trajectory_train_losses_ax.set_title('Train trajectory Loss', fontsize=28)
+        all_trajectory_train_losses_ax.set_xlabel('trajectory no.', fontsize=22)
+        all_trajectory_train_losses_ax.set_ylabel('loss', fontsize=22)
 
-        train_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
-        train_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
+        # train_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
+        # train_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
 
-        all_trajectory_train_losses_ax.xaxis.set_major_locator(ticker.AutoLocator())
-        all_trajectory_train_losses_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
+        # all_trajectory_train_losses_ax.xaxis.set_major_locator(ticker.AutoLocator())
+        # all_trajectory_train_losses_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
 
-        train_loss_ax.plot(train_loss_record['train_epoch_losses'])
-        all_trajectory_train_losses_ax.plot(train_loss_record['all_trajectory_train_losses'])
+        train_loss_ax.plot(range(1, len(train_loss_record['train_epoch_losses']) + 1), train_loss_record['train_epoch_losses'])
+        all_trajectory_train_losses_ax.plot(range(1, len(train_loss_record['all_trajectory_train_losses']) + 1), train_loss_record['all_trajectory_train_losses'])
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         eval_mse_loss_ax = fig.add_subplot(gs[0, 1])
         eval_l1_loss_ax = fig.add_subplot(gs[0, 2])
 
-        eval_mse_loss_ax.set_title('Eval MSE Loss')
-        eval_mse_loss_ax.set_xlabel('rollout no.')
-        eval_mse_loss_ax.set_ylabel('loss')
+        eval_mse_loss_ax.set_title('Eval MSE Loss', fontsize=28)
+        eval_mse_loss_ax.set_xlabel('rollout no.', fontsize=22)
+        eval_mse_loss_ax.set_ylabel('loss', fontsize=22)
 
-        eval_l1_loss_ax.set_title('Eval L1 Loss')
-        eval_l1_loss_ax.set_xlabel('rollout no.')
-        eval_l1_loss_ax.set_ylabel('loss')
+        eval_l1_loss_ax.set_title('Eval L1 Loss', fontsize=28)
+        eval_l1_loss_ax.set_xlabel('rollout no.', fontsize=22)
+        eval_l1_loss_ax.set_ylabel('loss', fontsize=22)
 
+        '''
         eval_mse_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
         eval_mse_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
         eval_l1_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
         eval_l1_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
+        '''
 
-        eval_mse_loss_ax.plot(eval_loss_record['eval_mse_losses'])
-        eval_l1_loss_ax.plot(eval_loss_record['eval_l1_losses'])
+        eval_mse_loss_ax.plot(range(1, len(eval_loss_record['eval_mse_losses']) + 1), eval_loss_record['eval_mse_losses'], 'o')
+        eval_l1_loss_ax.plot(range(1, len(eval_loss_record['eval_l1_losses']) + 1), eval_loss_record['eval_l1_losses'], 'o')
     fig.savefig(os.path.join(run_dir, "logs", "Train_and_Eval_Loss.png"))
 
+    # save max, min and mean value of train and eval losses as csv
+    csv_path = os.path.join(FLAGS.logging_dir, 'result.csv')
+    try:
+        Path(csv_path).touch()
+    except FileExistsError:
+        csv_path = os.path.join(FLAGS.logging_dir, 'FileExistsErrorHandled_result.csv')
+        Path(csv_path).touch()
+    entry = []
+    if FLAGS.mode == 'all':
+        entry = []
+        entry.append(["Simulation model", str(FLAGS.model)])
+        entry.append(["Finished FLAGS.mode", FLAGS.mode])
+        entry.append(["Train epochs", FLAGS.epochs])
+        entry.append(["Epoch trajectories", FLAGS.trajectories])
+        entry.append(["Rollouts", FLAGS.num_rollouts])
+        entry.append(["Evaluation set", FLAGS.rollout_split])
+        entry.append(["Core model", FLAGS.core_model])
+        entry.append(["Message passing aggregator", FLAGS.message_passing_aggregator])
+        entry.append(["Message passing steps", str(FLAGS.message_passing_steps)])
+        entry.append(["Attention used", str(FLAGS.attention)])
+        if FLAGS.ripple_used:
+            entry.append(["Ripple used", str(FLAGS.ripple_used)])
+            entry.append(["Ripple generation method", str(FLAGS.ripple_generation)])
+            entry.append(["Ripple generation number", str(FLAGS.ripple_generation_number)])
+            entry.append(["Ripple node selection method", str(FLAGS.ripple_node_selection)])
+            entry.append(["Ripple node selection number", str(FLAGS.ripple_node_selection_random_top_n)])
+            entry.append(["Ripple node connection method", str(FLAGS.ripple_node_connection)])
+            entry.append(["Ripple node ncross number", str(FLAGS.ripple_node_ncross)])
+        else:
+            entry.append(["Ripple used", str(FLAGS.ripple_used)])
+            entry.append(["Ripple generation method", ""])
+            entry.append(["Ripple generation number", ""])
+            entry.append(["Ripple node selection method", ""])
+            entry.append(["Ripple node selection number", ""])
+            entry.append(["Ripple node connection method", ""])
+            entry.append(["Ripple node ncross number", ""])
+        entry.append(["Elapsed time", elapsed_time])
+        entry.append(["Train mean elapsed time", train_mean_elapsed_time])
+        entry.append(["Mean train epoch loss", str(train_loss_record['train_mean_epoch_loss'])])
+        entry.append(["Max train epoch loss", str(train_loss_record['train_max_epoch_loss'])])
+        entry.append(["Min train epoch loss", str(train_loss_record['train_min_epoch_loss'])])
+        entry.append(["Mean eval mse loss", str(eval_loss_record['eval_mean_mse_loss'])])
+        entry.append(["Max eval mse loss", str(eval_loss_record['eval_max_mse_loss'])])
+        entry.append(["Min eval mse loss", str(eval_loss_record['eval_min_mse_loss'])])
+        entry.append(["Mean eval l1 loss", str(eval_loss_record['eval_mean_l1_loss'])])
+        entry.append(["Max eval l1 loss", str(eval_loss_record['eval_max_l1_loss'])])
+        entry.append(["Min eval l1 loss", str(eval_loss_record['eval_min_l1_loss'])])
+    elif FLAGS.mode == 'train':
+        entry = []
+        entry.append(["Simulation model", str(FLAGS.model)])
+        entry.append(["Finished FLAGS.mode", FLAGS.mode])
+        entry.append(["Train epochs", FLAGS.epochs])
+        entry.append(["Epoch trajectories", FLAGS.trajectories])
+        entry.append(["Rollouts", ""])
+        entry.append(["Evaluation set", ""])
+        entry.append(["Core model", FLAGS.core_model])
+        entry.append(["Message passing aggregator", FLAGS.message_passing_aggregator])
+        entry.append(["Message passing steps", str(FLAGS.message_passing_steps)])
+        entry.append(["Attention used", str(FLAGS.attention)])
+        if FLAGS.ripple_used:
+            entry.append(["Ripple used", str(FLAGS.ripple_used)])
+            entry.append(["Ripple generation method", str(FLAGS.ripple_generation)])
+            entry.append(["Ripple generation number", str(FLAGS.ripple_generation_number)])
+            entry.append(["Ripple node selection method", str(FLAGS.ripple_node_selection)])
+            entry.append(["Ripple node selection number", str(FLAGS.ripple_node_selection_random_top_n)])
+            entry.append(["Ripple node connection method", str(FLAGS.ripple_node_connection)])
+            entry.append(["Ripple node ncross number", str(FLAGS.ripple_node_ncross)])
+        else:
+            entry.append(["Ripple used", str(FLAGS.ripple_used)])
+            entry.append(["Ripple generation method", ""])
+            entry.append(["Ripple generation number", ""])
+            entry.append(["Ripple node selection method", ""])
+            entry.append(["Ripple node selection number", ""])
+            entry.append(["Ripple node connection method", ""])
+            entry.append(["Ripple node ncross number", ""])
+        entry.append(["Elapsed time", elapsed_time])
+        entry.append(["Train mean elapsed time", train_mean_elapsed_time])
+        entry.append(["Mean train epoch loss", str(train_loss_record['train_mean_epoch_loss'])])
+        entry.append(["Max train epoch loss", str(train_loss_record['train_max_epoch_loss'])])
+        entry.append(["Min train epoch loss", str(train_loss_record['train_min_epoch_loss'])])
+        entry.append(["Mean eval mse loss", ""])
+        entry.append(["Max eval mse loss", ""])
+        entry.append(["Min eval mse loss", ""])
+        entry.append(["Mean eval l1 loss", ""])
+        entry.append(["Max eval l1 loss", ""])
+        entry.append(["Min eval l1 loss", ""])
+    elif FLAGS.mode == 'eval':
+        entry = []
+        entry.append(["Simulation model", str(FLAGS.model)])
+        entry.append(["Finished FLAGS.mode", FLAGS.mode])
+        entry.append(["Train epochs", ""])
+        entry.append(["Epoch trajectories", ""])
+        entry.append(["Rollouts", FLAGS.num_rollouts])
+        entry.append(["Evaluation set", FLAGS.rollout_split])
+        entry.append(["Core model", FLAGS.core_model])
+        entry.append(["Message passing aggregator", FLAGS.message_passing_aggregator])
+        entry.append(["Message passing steps", str(FLAGS.message_passing_steps)])
+        entry.append(["Attention used", str(FLAGS.attention)])
+        if FLAGS.ripple_used:
+            entry.append(["Ripple used", str(FLAGS.ripple_used)])
+            entry.append(["Ripple generation method", str(FLAGS.ripple_generation)])
+            entry.append(["Ripple generation number", str(FLAGS.ripple_generation_number)])
+            entry.append(["Ripple node selection method", str(FLAGS.ripple_node_selection)])
+            entry.append(["Ripple node selection number", str(FLAGS.ripple_node_selection_random_top_n)])
+            entry.append(["Ripple node connection method", str(FLAGS.ripple_node_connection)])
+            entry.append(["Ripple node ncross number", str(FLAGS.ripple_node_ncross)])
+        else:
+            entry.append(["Ripple used", str(FLAGS.ripple_used)])
+            entry.append(["Ripple generation method", ""])
+            entry.append(["Ripple generation number", ""])
+            entry.append(["Ripple node selection method", ""])
+            entry.append(["Ripple node selection number", ""])
+            entry.append(["Ripple node connection method", ""])
+            entry.append(["Ripple node ncross number", ""])
+        entry.append(["Elapsed time", elapsed_time])
+        entry.append(["Train mean elapsed time", train_mean_elapsed_time])
+        entry.append(["Mean train epoch loss", ""])
+        entry.append(["Max train epoch loss", ""])
+        entry.append(["Min train epoch loss", ""])
+        entry.append(["Mean eval mse loss", str(eval_loss_record['eval_mean_mse_loss'])])
+        entry.append(["Max eval mse loss", str(eval_loss_record['eval_max_mse_loss'])])
+        entry.append(["Min eval mse loss", str(eval_loss_record['eval_min_mse_loss'])])
+        entry.append(["Mean eval l1 loss", str(eval_loss_record['eval_mean_l1_loss'])])
+        entry.append(["Max eval l1 loss", str(eval_loss_record['eval_max_l1_loss'])])
+        entry.append(["Min eval l1 loss", str(eval_loss_record['eval_min_l1_loss'])])
+    with open(csv_path, 'w', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile)
+        csv_writer.writerows(entry)
 
 if __name__ == '__main__':
     app.run(main)

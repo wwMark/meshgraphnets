@@ -19,7 +19,8 @@
 import torch
 from torch import nn as nn
 import torch.nn.functional as F
-from torch_cluster import random_walk
+# from torch_cluster import random_walk
+import functools
 
 import common
 import normalization
@@ -27,7 +28,6 @@ import encode_process_decode
 import encode_process_decode_max_pooling
 import encode_process_decode_lstm
 import encode_process_decode_graph_structure_watcher
-import encode_process_decode_ripple
 
 device = torch.device('cuda')
 
@@ -35,7 +35,11 @@ device = torch.device('cuda')
 class Model(nn.Module):
     """Model for static cloth simulation."""
 
-    def __init__(self, params, core_model_name, message_passing_aggregator, message_passing_steps):
+    def __init__(self, params, core_model_name=encode_process_decode, message_passing_aggregator='sum',
+                 message_passing_steps=15, attention=False, ripple_used=False, ripple_generation=None,
+                 ripple_generation_number=None,
+                 ripple_node_selection=None, ripple_node_selection_random_top_n=None, ripple_node_connection=None,
+                 ripple_node_ncross=None):
         super(Model, self).__init__()
         self._params = params
         self._output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
@@ -45,48 +49,56 @@ class Model(nn.Module):
             size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
 
         # for stochastic message passing
+        '''
         self.random_walk_generation_interval = 399
         self.input_count = 0
         self.sto_mat = None
         self.normalized_adj_mat = None
+        '''
 
         self.core_model_name = core_model_name
         self.core_model = self.select_core_model(core_model_name)
         self.message_passing_steps = message_passing_steps
         self.message_passing_aggregator = message_passing_aggregator
-        # self.stochastic_message_passing_used = self._params['stochastic_message_passing_used']
-        self.stochastic_message_passing_used = False
-        self.learned_model = self.core_model.EncodeProcessDecode(
-            output_size=params['size'],
-            latent_size=128,
-            num_layers=2,
-            message_passing_steps=self.message_passing_steps,
-            message_passing_aggregator=self.message_passing_aggregator,
-            stochastic_message_passing_used=self.stochastic_message_passing_used)
+        self._attention = attention
+        self._ripple_used = ripple_used
+        if self._ripple_used:
+            self._ripple_generation = ripple_generation
+            self._ripple_generation_number = ripple_generation_number
+            self._ripple_node_selection = ripple_node_selection
+            self._ripple_node_selection_random_top_n = ripple_node_selection_random_top_n
+            self._ripple_node_connection = ripple_node_connection
+            self._ripple_node_ncross = ripple_node_ncross
+        # self.stochastic_message_passing_used = False
+        if self._ripple_used:
+            self.learned_model = self.core_model.EncodeProcessDecode(
+                output_size=params['size'],
+                latent_size=128,
+                num_layers=2,
+                message_passing_steps=self.message_passing_steps,
+                message_passing_aggregator=self.message_passing_aggregator, attention=self._attention,
+                ripple_used=self._ripple_used,
+                ripple_generation=self._ripple_generation, ripple_generation_number=self._ripple_generation_number,
+                ripple_node_selection=self._ripple_node_selection,
+                ripple_node_selection_random_top_n=self._ripple_node_selection_random_top_n,
+                ripple_node_connection=self._ripple_node_connection,
+                ripple_node_ncross=self._ripple_node_ncross)
+        else:
+            self.learned_model = self.core_model.EncodeProcessDecode(
+                output_size=params['size'],
+                latent_size=128,
+                num_layers=2,
+                message_passing_steps=self.message_passing_steps,
+                message_passing_aggregator=self.message_passing_aggregator, attention=self._attention,
+                ripple_used=self._ripple_used)
 
     def select_core_model(self, core_model_name):
         return {
             'encode_process_decode': encode_process_decode,
             'encode_process_decode_graph_structure_watcher': encode_process_decode_graph_structure_watcher,
-            'encode_process_decode_ripple': encode_process_decode_ripple,
             'encode_process_decode_max_pooling': encode_process_decode_max_pooling,
             'encode_process_decode_lstm': encode_process_decode_lstm,
         }.get(core_model_name, encode_process_decode)
-
-    def get_core_model_name(self):
-        return str(self.core_model)
-
-    def get_core_model_config(self):
-        return self.learned_model.get_core_model_config()
-
-    def get_message_passing_steps(self):
-        return str(self.message_passing_steps)
-
-    def get_message_passing_aggregator(self):
-        return str(self.message_passing_aggregator)
-
-    def get_stochastic_message_passing_used(self):
-        return str(self.stochastic_message_passing_used)
 
     def _build_graph(self, inputs, is_training):
         """Builds input graph."""
@@ -105,6 +117,7 @@ class Model(nn.Module):
         Stochastic matrix and adjacency matrix
         Reference: a simple and general graph neural network with stochastic message passing
         '''
+        '''
         if self.stochastic_message_passing_used and self.input_count % self.random_walk_generation_interval == 0:
             start = torch.tensor(range(node_type.shape[0]), device=device)
             self.sto_mat = random_walk(receivers, senders, start, walk_length=20)
@@ -122,6 +135,7 @@ class Model(nn.Module):
             self.normalized_adj_mat = torch.matmul(inversed_square_root_degree_mat, self_loop_adj_mat)
             self.normalized_adj_mat = torch.matmul(self.normalized_adj_mat, inversed_square_root_degree_mat)
         self.input_count += 1
+        '''
         mesh_pos = inputs['mesh_pos']
         relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
                               torch.index_select(input=world_pos, dim=0, index=receivers))
@@ -139,7 +153,7 @@ class Model(nn.Module):
             receivers=receivers,
             senders=senders)
 
-        if self.core_model == encode_process_decode_ripple:
+        if self.core_model == encode_process_decode and self._ripple_used == True:
             return self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training),
                                                      edge_sets=[mesh_edges], world_pos=world_pos, mesh_pos=mesh_pos)
         else:
@@ -149,15 +163,9 @@ class Model(nn.Module):
     def forward(self, inputs, is_training):
         graph = self._build_graph(inputs, is_training=is_training)
         if is_training:
-            if self.stochastic_message_passing_used:
-                return self.learned_model(graph, self.normalized_adj_mat, self.sto_mat)
-            else:
-                return self.learned_model(graph)
+            return self.learned_model(graph, self._edge_normalizer, is_training=is_training)
         else:
-            if self.stochastic_message_passing_used:
-                return self._update(inputs, self.learned_model(graph, self.normalized_adj_mat, self.sto_mat))
-            else:
-                return self._update(inputs, self.learned_model(graph))
+            return self._update(inputs, self.learned_model(graph, self._edge_normalizer, is_training=is_training))
 
     def _update(self, inputs, per_node_network_output):
         """Integrate model outputs."""

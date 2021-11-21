@@ -17,15 +17,21 @@
 """Core learned graph net model."""
 
 import collections
+from math import ceil
 from collections import OrderedDict
 import functools
 import torch
 from torch import nn as nn
 import torch_scatter
+from torch_scatter.composite import scatter_softmax
+import torch.nn.functional as F
+
+import ripple_machine
 
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])
 MultiGraph = collections.namedtuple('Graph', ['node_features', 'edge_sets'])
+MultiGraphWithPos = collections.namedtuple('Graph', ['node_features', 'edge_sets', 'world_pos', 'mesh_pos'])
 
 device = torch.device('cuda')
 
@@ -47,13 +53,31 @@ class LazyMLP(nn.Module):
         return y
 
 
+class AttentionModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear_layer = nn.LazyLinear(1)
+        self.leaky_relu = nn.LeakyReLU(negative_slope=0.2)
+
+    def forward(self, input, index):
+        latent = self.linear_layer(input)
+        latent = self.leaky_relu(latent)
+        result = torch.zeros(*latent.shape)
+        result = scatter_softmax(latent.float(), index, dim=0)
+        result = result.type(result.dtype)
+        return result
+
+
 class GraphNetBlock(nn.Module):
     """Multi-Edge Interaction Network with residual connections."""
 
-    def __init__(self, model_fn, output_size, message_passing_aggregator):
+    def __init__(self, model_fn, output_size, message_passing_aggregator, attention=False):
         super().__init__()
         self.edge_model = model_fn(output_size)
         self.node_model = model_fn(output_size)
+        self.attention = attention
+        if attention:
+            self.attention_model = AttentionModel()
         self.message_passing_aggregator = message_passing_aggregator
 
     def _update_edge_features(self, node_features, edge_set):
@@ -65,6 +89,14 @@ class GraphNetBlock(nn.Module):
         features = [sender_features, receiver_features, edge_set.features]
         features = torch.cat(features, dim=-1)
         return self.edge_model(features)
+
+    '''
+    def _update_node_features_mp_helper(self, features, receivers, add_intermediate):
+        for index, feature_tensor in enumerate(features):
+            des_index = receivers[index]
+            add_intermediate[des_index].add(feature_tensor)
+        return add_intermediate
+    '''
 
     def unsorted_segment_operation(self, data, segment_ids, num_segments, operation):
         """
@@ -102,7 +134,21 @@ class GraphNetBlock(nn.Module):
         num_nodes = node_features.shape[0]
         features = [node_features]
         for edge_set in edge_sets:
-            features.append(self.unsorted_segment_operation(edge_set.features, edge_set.receivers, num_nodes, self.message_passing_aggregator))
+            if self.attention:
+                receiver_features = edge_set.features[edge_set.receivers]
+                sender_features = edge_set.features[edge_set.senders]
+                attention = self.attention_model(torch.cat((sender_features, receiver_features), dim=1),
+                                                 edge_set.receivers)
+                attention = attention.repeat_interleave(
+                    torch.prod(torch.tensor(edge_set.features.shape[1:])).long().to(device))
+                attention = attention.view(edge_set.features.shape[0], *edge_set.features.shape[1:]).to(device)
+                features.append(
+                    self.unsorted_segment_operation(torch.mul(edge_set.features, attention), edge_set.receivers,
+                                                    num_nodes, operation=self.message_passing_aggregator))
+            else:
+                features.append(
+                    self.unsorted_segment_operation(edge_set.features, edge_set.receivers, num_nodes,
+                                                    operation=self.message_passing_aggregator))
         features = torch.cat(features, dim=-1)
         return self.node_model(features)
 
@@ -164,23 +210,49 @@ class Decoder(nn.Module):
     def forward(self, graph):
         return self.model(graph.node_features)
 
-
 class Processor(nn.Module):
-    def __init__(self, make_mlp, output_size, message_passing_steps, message_passing_aggregator):
+    '''
+    This class takes the nodes with the most influential feature (sum of square)
+    The the chosen numbers of nodes in each ripple will establish connection(features and distances) with the most influential nodes and this connection will be learned
+    Then the result is add to output latent graph of encoder and the modified latent graph will be feed into original processor
+
+    Option: choose whether to normalize the high rank node connection
+    '''
+
+    def __init__(self, make_mlp, output_size, message_passing_steps, message_passing_aggregator, attention=False,
+                 stochastic_message_passing_used=False):
+        super().__init__()
+        self.stochastic_message_passing_used = stochastic_message_passing_used
+        self.graphnet_blocks = nn.ModuleList()
+        for index in range(message_passing_steps):
+            self.graphnet_blocks.append(GraphNetBlock(model_fn=make_mlp, output_size=output_size,
+                                                      message_passing_aggregator=message_passing_aggregator,
+                                                      attention=attention))
+
+    def forward(self, latent_graph, normalized_adj_mat=None):
+        if self.stochastic_message_passing_used:
+            for graphnet_block in self.graphnet_blocks:
+                latent_graph._replace(node_features=torch.matmul(normalized_adj_mat, latent_graph.node_features))
+                latent_graph = graphnet_block(latent_graph)
+            return latent_graph
+        else:
+            for graphnet_block in self.graphnet_blocks:
+                latent_graph = graphnet_block(latent_graph)
+            return latent_graph
+
+'''
+class StochasticFuser(nn.Module):
+    def __init__(self, make_mlp, output_size):
         super().__init__()
         self._submodules_ordered_dict = OrderedDict()
-        for index in range(message_passing_steps):
-            self._submodules_ordered_dict[str(index)] = GraphNetBlock(model_fn=make_mlp, output_size=output_size, message_passing_aggregator=message_passing_aggregator)
-        self.submodules = nn.Sequential(self._submodules_ordered_dict)
-        '''
-        super().__init__()
-        self._message_passing_steps = message_passing_steps
-        self.submodule = GraphNetBlock(model_fn=make_mlp, output_size=output_size)
-        '''
+        self.sto_fuse_model = self._make_mlp(self._latent_size)
 
-    def forward(self, graph):
-        return self.submodules(graph)
-
+    def forward(self, latent_graph, sto_repr):
+        node_features = latent_graph.node_features
+        fuser_input = torch.cat((node_features, sto_repr), dim=-1)
+        node_features = self.sto_fuse_model(fuser_input)
+        return latent_graph._replace(node_features=node_features)
+'''
 
 class EncodeProcessDecode(nn.Module):
     """Encode-Process-Decode GraphNet model."""
@@ -189,23 +261,73 @@ class EncodeProcessDecode(nn.Module):
                  output_size,
                  latent_size,
                  num_layers,
-                 message_passing_steps, message_passing_aggregator, stochastic_message_passing_used=False):
+                 message_passing_aggregator, message_passing_steps, attention, ripple_used,
+                 ripple_generation=None, ripple_generation_number=None,
+                 ripple_node_selection=None, ripple_node_selection_random_top_n=None, ripple_node_connection=None,
+                 ripple_node_ncross=None):
         super().__init__()
         self._latent_size = latent_size
         self._output_size = output_size
         self._num_layers = num_layers
         self._message_passing_steps = message_passing_steps
         self._message_passing_aggregator = message_passing_aggregator
-        self.attention = False
+
+        self._attention = attention
+
+        self._ripple_used = ripple_used
+        if self._ripple_used:
+            self._ripple_generation = ripple_generation
+            self._ripple_generation_number =ripple_generation_number
+            self._ripple_node_selection = ripple_node_selection
+            self._ripple_node_selection_random_top_n = ripple_node_selection_random_top_n
+            self._ripple_node_connection = ripple_node_connection
+            self._ripple_node_ncross = ripple_node_ncross
+            self._ripple_machine = ripple_machine.RippleMachine(ripple_generation, ripple_generation_number, ripple_node_selection,
+                 ripple_node_selection_random_top_n, ripple_node_connection, ripple_node_ncross)
+
+        '''
+        self.normalize_connection_in_rcg = True
+        self.num_ripples = 6
+        self.ripple_sample_size_generator = 'equal'
+        self.num_or_percentage = {'option': 'percentage', 'value': 0.01}
+        self.equal_generator_sample_size = 10
+        self.attention = True
+        '''
+
         self.encoder = Encoder(make_mlp=self._make_mlp, latent_size=self._latent_size)
+        '''
+        if self._ripple_used:
+            self.ripple_connection_generator = RippleConnectionGenerator(make_mlp=self._make_mlp,
+                                                                         output_size=self._latent_size,
+                                                                         normalize_connection=self.normalize_connection_in_rcg,
+                                                                         ripple_params=self._ripple_params)
+        '''
+        '''
+            self.ripple_connection_generator = RippleConnectionGenerator(make_mlp=self._make_mlp,
+                                                                         output_size=self._latent_size,
+                                                                         normalize_connection=self.normalize_connection_in_rcg,
+                                                                         num_ripples=self.num_ripples,
+                                                                         ripple_sample_size_generator=self.ripple_sample_size_generator,
+                                                                         num_or_percentage=self.num_or_percentage,
+                                                                         equal_generator_sample_size=self.equal_generator_sample_size)
+        '''
         self.processor = Processor(make_mlp=self._make_mlp, output_size=self._latent_size,
                                    message_passing_steps=self._message_passing_steps,
-                                   message_passing_aggregator=self._message_passing_aggregator)
+                                   message_passing_aggregator=self._message_passing_aggregator,
+                                   attention=self._attention,
+                                   stochastic_message_passing_used=False)
         self.decoder = Decoder(make_mlp=functools.partial(self._make_mlp, layer_norm=False),
                                output_size=self._output_size)
 
+    '''
     def get_core_model_config(self):
-                 return {'attention': self.attention}
+        return {"normalize_connection_in_rcg": self.normalize_connection_in_rcg, 'num_ripples': self.num_ripples,
+                'ripple_sample_size_generator': self.ripple_sample_size_generator,
+                'num_or_percentage': self.num_or_percentage,
+                'equal_generator_sample_size': self.equal_generator_sample_size,
+                'attention': self.attention}
+    '''
+
     def _make_mlp(self, output_size, layer_norm=True):
         """Builds an MLP."""
         widths = [self._latent_size] * self._num_layers + [output_size]
@@ -214,8 +336,28 @@ class EncodeProcessDecode(nn.Module):
             network = nn.Sequential(network, nn.LayerNorm(normalized_shape=widths[-1]))
         return network
 
-    def forward(self, graph):
+    def forward(self, graph, edge_normalizer, is_training, normalized_adj_mat=None, sto_mat=None):
         """Encodes and processes a multigraph, and returns node features."""
+        if self._ripple_used:
+            graph = self._ripple_machine.add_meta_edges(graph, edge_normalizer, is_training)
         latent_graph = self.encoder(graph)
+        # if self._ripple_used:
+        #    latent_graph = self.ripple_connection_generator(latent_graph, graph)
         latent_graph = self.processor(latent_graph)
         return self.decoder(latent_graph)
+        '''
+        stochastic message passing is not necessary
+        if self.stochastic_message_passing_used:
+            sto_graph = graph._replace(node_features=torch.cat((graph.node_features, sto_mat), dim=-1))
+            latent_graph = self.encoder(sto_graph)
+            latent_graph = self.ripple_connection_generator(latent_graph, graph)
+            latent_graph = self.processor(latent_graph, normalized_adj_mat)
+            return self.decoder(latent_graph)
+        else:
+            graph = self._ripple_machine.add_meta_edges(graph)
+            latent_graph = self.encoder(graph)
+            # if self._ripple_used:
+            #    latent_graph = self.ripple_connection_generator(latent_graph, graph)
+            latent_graph = self.processor(latent_graph)
+            return self.decoder(latent_graph)
+        '''
