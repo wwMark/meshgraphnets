@@ -54,7 +54,7 @@ device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
+flags.DEFINE_enum('model', 'cfd', ['cfd', 'cloth'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
@@ -93,7 +93,7 @@ ripple_node_connection defines how the selected nodes of each ripple connect wit
     fully_connected: all the selected nodes are connected with each other
     fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
 '''
-flags.DEFINE_boolean('ripple_used', False, 'whether ripple is used or not')
+flags.DEFINE_boolean('ripple_used', True, 'whether ripple is used or not')
 flags.DEFINE_enum('ripple_generation', 'gradient', ['equal_size', 'gradient', 'exponential_size'],
                   'defines how ripples are generated')
 flags.DEFINE_integer('ripple_generation_number', 1,
@@ -113,7 +113,8 @@ start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
 start_datetime_dash = start_datetime.replace(" ", "-").replace(":", "-")
 
 root_dir = pathlib.Path(__file__).parent.resolve()
-dataset_name = 'flag_simple'
+# dataset_name = 'flag_simple'
+dataset_name = 'cylinder_flow'
 dataset_dir = os.path.join(root_dir, 'data', dataset_name)
 output_dir = os.path.join(root_dir, 'output', dataset_name)
 run_dir = os.path.join(output_dir, start_datetime_dash)
@@ -157,7 +158,7 @@ loaded_meta = False
 shapes = {}
 dtypes = {}
 types = {}
-
+steps = None
 
 def squeeze_data_frame(data_frame):
     for k, v in data_frame.items():
@@ -227,7 +228,7 @@ def split_and_preprocess(params, model_type):
             return trajectory_steps
         '''
         trajectory_steps = []
-        for i in range(399):
+        for i in range(steps):
             trajectory_step = {}
             for key, value in trajectory.items():
                 trajectory_step[key] = value[i]
@@ -243,6 +244,8 @@ def process_trajectory(trajectory_data, params, model_type, add_targets_bool=Fal
     global shapes
     global dtypes
     global types
+    global steps
+
     if not loaded_meta:
         try:
             with open(os.path.join(FLAGS.dataset_dir, 'meta.json'), 'r') as fp:
@@ -250,6 +253,7 @@ def process_trajectory(trajectory_data, params, model_type, add_targets_bool=Fal
             shapes = {}
             dtypes = {}
             types = {}
+            steps = meta['trajectory_length'] - 2
             for key, field in meta['features'].items():
                 shapes[key] = field['shape']
                 dtypes[key] = field['dtype']

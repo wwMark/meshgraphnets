@@ -36,8 +36,8 @@ latest_subdir = max(all_subdirs, key=os.path.getmtime)
 rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\cylinder_flow\\Sun-Oct-24-21-30-58-2021\\rollout\\rollout.pkl', 'Path to rollout pickle file')
-
+# flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\cylinder_flow\\Sun-Oct-24-21-30-58-2021\\rollout\\rollout.pkl', 'Path to rollout pickle file')
+flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
 
 def main(unused_argv):
     print("Ploting run", FLAGS.rollout_path)

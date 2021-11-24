@@ -47,6 +47,7 @@ class Model(nn.Module):
             size=3 + common.NodeType.SIZE, name='node_normalizer')
         self._edge_normalizer = normalization.Normalizer(
             size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
+        self._model_type = params['model'].__name__
 
         # for stochastic message passing
         '''
@@ -155,7 +156,8 @@ class Model(nn.Module):
 
         if self.core_model == encode_process_decode and self._ripple_used == True:
             return self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training),
-                                                     edge_sets=[mesh_edges], world_pos=world_pos, mesh_pos=mesh_pos)
+                                                     edge_sets=[mesh_edges], target_feature=world_pos,
+                                                     mesh_pos=mesh_pos, model_type=self._model_type)
         else:
             return self.core_model.MultiGraph(node_features=self._node_normalizer(node_features, is_training),
                                               edge_sets=[mesh_edges])

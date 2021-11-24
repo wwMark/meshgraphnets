@@ -19,8 +19,8 @@ class RippleGenerator():
         ripple_indices = []
         if self._ripple_generation_method == 'equal_size':
             ripple_number = self._ripple_generation_number
-            world_pos_matrix = graph.world_pos
-            num_nodes = world_pos_matrix.shape[0]
+            target_feature_matrix = graph.target_feature
+            num_nodes = target_feature_matrix.shape[0]
             ripple_size = num_nodes // ripple_number
             ripple_size_rest = num_nodes % ripple_number
             assert ripple_size > 0
@@ -53,8 +53,8 @@ class RippleGenerator():
         elif self._ripple_generation_method == 'exponential_size':
             base = self._ripple_generation_number
             exponential = 1
-            world_pos_matrix = graph.world_pos
-            num_nodes = world_pos_matrix.shape[0]
+            target_feature_matrix = graph.target_feature
+            num_nodes = target_feature_matrix.shape[0]
             start_index = 0
             while True:
                 end_index = start_index + base ** exponential
@@ -101,6 +101,7 @@ class RippleNodeConnector():
         self._ripple_node_ncross = ripple_node_ncross
 
     def connect(self, graph, ripples, node_selections, edge_normalizer, is_training):
+        model_type = graph.model_type
         velocity_matrix = graph.node_features[:, 0:3]
 
         velocity_norm = torch.norm(velocity_matrix, dim=1)
@@ -112,7 +113,7 @@ class RippleNodeConnector():
             selected_nodes.append(ripple[node_mask])
 
         if self._ripple_node_connection == 'most_influential':
-            world_pos = graph.world_pos
+            target_feature = graph.target_feature
             mesh_pos = graph.mesh_pos
             receivers_list = [index for sub_selected_nodes in selected_nodes for index in sub_selected_nodes]
             receivers_list.pop(0)
@@ -122,15 +123,22 @@ class RippleNodeConnector():
                 (torch.tensor(senders_list, device=device), torch.tensor(receivers_list, device=device)), dim=0)
             receivers = torch.cat(
                 (torch.tensor(receivers_list, device=device), torch.tensor(senders_list, device=device)), dim=0)
-            relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
-                                  torch.index_select(input=world_pos, dim=0, index=receivers))
-            relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
-                                 torch.index_select(mesh_pos, 0, receivers))
-            edge_features = torch.cat((
-                relative_world_pos,
-                torch.norm(relative_world_pos, dim=-1, keepdim=True),
-                relative_mesh_pos,
-                torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+            if model_type == 'cloth_model':
+                relative_target_feature = (torch.index_select(input=target_feature, dim=0, index=senders) -
+                                      torch.index_select(input=target_feature, dim=0, index=receivers))
+                relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                                     torch.index_select(mesh_pos, 0, receivers))
+                edge_features = torch.cat((
+                    relative_target_feature,
+                    torch.norm(relative_target_feature, dim=-1, keepdim=True),
+                    relative_mesh_pos,
+                    torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+            elif model_type == 'cfd_model':
+                relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                                     torch.index_select(mesh_pos, 0, receivers))
+                edge_features = torch.cat((
+                    relative_mesh_pos,
+                    torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
             edge_features = edge_normalizer(edge_features, is_training)
 
             mesh_edges = graph.edge_sets[0]
@@ -140,7 +148,7 @@ class RippleNodeConnector():
             new_graph = MultiGraph(node_features=graph.node_features, edge_sets=[mesh_edges])
 
         elif self._ripple_node_connection == 'fully_connected':
-            world_pos = graph.world_pos
+            target_feature = graph.target_feature
             mesh_pos = graph.mesh_pos
             for ripple_selected_nodes in selected_nodes:
                 receivers_list = ripple_selected_nodes
@@ -149,15 +157,22 @@ class RippleNodeConnector():
                     (torch.tensor(senders_list, device=device), torch.tensor(receivers_list, device=device)), dim=0)
                 receivers = torch.cat(
                     (torch.tensor(receivers_list, device=device), torch.tensor(senders_list, device=device)), dim=0)
-                relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
-                                      torch.index_select(input=world_pos, dim=0, index=receivers))
-                relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
-                                     torch.index_select(mesh_pos, 0, receivers))
-                edge_features = torch.cat((
-                    relative_world_pos,
-                    torch.norm(relative_world_pos, dim=-1, keepdim=True),
-                    relative_mesh_pos,
-                    torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+                if model_type == 'cloth_model':
+                    relative_target_feature = (torch.index_select(input=target_feature, dim=0, index=senders) -
+                                               torch.index_select(input=target_feature, dim=0, index=receivers))
+                    relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                                         torch.index_select(mesh_pos, 0, receivers))
+                    edge_features = torch.cat((
+                        relative_target_feature,
+                        torch.norm(relative_target_feature, dim=-1, keepdim=True),
+                        relative_mesh_pos,
+                        torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+                elif model_type == 'cfd_model':
+                    relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                                         torch.index_select(mesh_pos, 0, receivers))
+                    edge_features = torch.cat((
+                        relative_mesh_pos,
+                        torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
                 edge_features = edge_normalizer(edge_features, is_training)
 
                 mesh_edges = graph.edge_sets[0]
@@ -167,7 +182,7 @@ class RippleNodeConnector():
                 new_graph = MultiGraph(node_features=graph.node_features, edge_sets=[mesh_edges])
 
         elif self._ripple_node_connection == 'fully_ncross_connected':
-            world_pos = graph.world_pos
+            target_feature = graph.target_feature
             mesh_pos = graph.mesh_pos
             cross_nodes = []
             for ripple_selected_nodes in selected_nodes:
@@ -183,15 +198,22 @@ class RippleNodeConnector():
                     (torch.tensor(senders_list, device=device), torch.tensor(receivers_list, device=device)), dim=0)
                 receivers = torch.cat(
                     (torch.tensor(receivers_list, device=device), torch.tensor(senders_list, device=device)), dim=0)
-                relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
-                                      torch.index_select(input=world_pos, dim=0, index=receivers))
-                relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
-                                     torch.index_select(mesh_pos, 0, receivers))
-                edge_features = torch.cat((
-                    relative_world_pos,
-                    torch.norm(relative_world_pos, dim=-1, keepdim=True),
-                    relative_mesh_pos,
-                    torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+                if model_type == 'cloth_model':
+                    relative_target_feature = (torch.index_select(input=target_feature, dim=0, index=senders) -
+                                               torch.index_select(input=target_feature, dim=0, index=receivers))
+                    relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                                         torch.index_select(mesh_pos, 0, receivers))
+                    edge_features = torch.cat((
+                        relative_target_feature,
+                        torch.norm(relative_target_feature, dim=-1, keepdim=True),
+                        relative_mesh_pos,
+                        torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+                elif model_type == 'cfd_model':
+                    relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                                         torch.index_select(mesh_pos, 0, receivers))
+                    edge_features = torch.cat((
+                        relative_mesh_pos,
+                        torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
                 edge_features = edge_normalizer(edge_features, is_training)
 
                 mesh_edges = graph.edge_sets[0]
@@ -207,15 +229,22 @@ class RippleNodeConnector():
                 (torch.tensor(senders_list, device=device, dtype=torch.int32), torch.tensor(receivers_list, device=device, dtype=torch.int32)), dim=0)
             receivers = torch.cat(
                 (torch.tensor(receivers_list, device=device), torch.tensor(senders_list, device=device)), dim=0)
-            relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
-                                  torch.index_select(input=world_pos, dim=0, index=receivers))
-            relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
-                                 torch.index_select(mesh_pos, 0, receivers))
-            edge_features = torch.cat((
-                relative_world_pos,
-                torch.norm(relative_world_pos, dim=-1, keepdim=True),
-                relative_mesh_pos,
-                torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+            if model_type == 'cloth_model':
+                relative_target_feature = (torch.index_select(input=target_feature, dim=0, index=senders) -
+                                           torch.index_select(input=target_feature, dim=0, index=receivers))
+                relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                                     torch.index_select(mesh_pos, 0, receivers))
+                edge_features = torch.cat((
+                    relative_target_feature,
+                    torch.norm(relative_target_feature, dim=-1, keepdim=True),
+                    relative_mesh_pos,
+                    torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+            elif model_type == 'cfd_model':
+                relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                                     torch.index_select(mesh_pos, 0, receivers))
+                edge_features = torch.cat((
+                    relative_mesh_pos,
+                    torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
             edge_features = edge_normalizer(edge_features, is_training)
 
             mesh_edges = graph.edge_sets[0]
