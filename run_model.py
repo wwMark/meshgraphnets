@@ -48,20 +48,19 @@ import matplotlib
 
 matplotlib.use('AGG')
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 
 device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'cfd', ['cfd', 'cloth'],
+flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 
-flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('epochs', 6, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
 flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
 
@@ -93,7 +92,7 @@ ripple_node_connection defines how the selected nodes of each ripple connect wit
     fully_connected: all the selected nodes are connected with each other
     fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
 '''
-flags.DEFINE_boolean('ripple_used', True, 'whether ripple is used or not')
+flags.DEFINE_boolean('ripple_used', False, 'whether ripple is used or not')
 flags.DEFINE_enum('ripple_generation', 'gradient', ['equal_size', 'gradient', 'exponential_size'],
                   'defines how ripples are generated')
 flags.DEFINE_integer('ripple_generation_number', 1,
@@ -113,8 +112,8 @@ start_datetime = datetime.datetime.fromtimestamp(start).strftime('%c')
 start_datetime_dash = start_datetime.replace(" ", "-").replace(":", "-")
 
 root_dir = pathlib.Path(__file__).parent.resolve()
-# dataset_name = 'flag_simple'
-dataset_name = 'cylinder_flow'
+dataset_name = 'flag_simple'
+# dataset_name = 'cylinder_flow'
 dataset_dir = os.path.join(root_dir, 'data', dataset_name)
 output_dir = os.path.join(root_dir, 'output', dataset_name)
 run_dir = os.path.join(output_dir, start_datetime_dash)
@@ -133,8 +132,8 @@ flags.DEFINE_string('logging_dir',
                     os.path.join(run_dir, 'logs'),
                     'Log file directory')
 flags.DEFINE_string('model_last_checkpoint_dir',
-                    None,
-                    # os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\Fri-Oct--8-20-25-39-2021', 'checkpoint_dir'),
+                    # None,
+                    os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\flag_simple\\Tue-Nov-30-16-00-15-2021', 'checkpoint_dir'),
                     'Path to the checkpoint file of a network that should continue training')
 flags.DEFINE_string('optimizer_last_checkpoint_file',
                     None,
@@ -159,6 +158,15 @@ shapes = {}
 dtypes = {}
 types = {}
 steps = None
+
+# store hpc start time for calculating rest running time
+hpc_start_time = time.time()
+# bwcluster max time limitation of gpu_8, in seconds
+# leave 2 hours for possible evaluation
+# hpc_default_max_time = 172800 - 3600 * 2
+hpc_default_max_time = 3 * 60
+hpc_max_time = hpc_start_time + hpc_default_max_time
+
 
 def squeeze_data_frame(data_frame):
     for k, v in data_frame.items():
@@ -291,7 +299,6 @@ def learner(model, params):
     loss_type = params['loss_type']
     model_type = FLAGS.model
 
-    # dataset preprocessing
     # batch size can be defined in load_dataset. Default to 1.
     batch_size = 1
     prefetch_factor = 2
@@ -319,8 +326,19 @@ def learner(model, params):
 
     count = 0
     pass_count = 500
+    if FLAGS.model_last_checkpoint_dir is not None:
+        pass_count = 0
     all_trajectory_train_losses = []
-    for epoch in range(FLAGS.epochs - trained_epoch):
+    epoch_run_times = []
+    for epoch in range(FLAGS.epochs)[trained_epoch:]:
+
+        # check whether the rest time is sufficient for running a whole epoch; stop running if not
+        hpc_current_time = time.time()
+        if len(epoch_run_times) != 0:
+            epoch_mean_time = sum(epoch_run_times) // len(epoch_run_times)
+            if hpc_current_time + epoch_mean_time >= hpc_max_time:
+                break
+
         ds_loader = dataset.load_dataset(FLAGS.dataset_dir, 'train', batch_size=batch_size,
                                          prefetch_factor=prefetch_factor,
                                          add_targets=True, split_and_preprocess=True)
@@ -374,6 +392,7 @@ def learner(model, params):
         if epoch == 20:
             scheduler.step()
         torch.save({'epoch': epoch}, os.path.join(FLAGS.checkpoint_dir, "epoch_checkpoint.pth"))
+        epoch_run_times.append(time.time() - hpc_current_time)
     model.save_model(os.path.join(FLAGS.checkpoint_dir, "model_checkpoint"))
     torch.save(optimizer.state_dict(), os.path.join(FLAGS.checkpoint_dir, "optimizer_checkpoint.pth"))
     torch.save(scheduler.state_dict(), os.path.join(FLAGS.checkpoint_dir, "scheduler_checkpoint.pth"))
@@ -558,7 +577,8 @@ def main(argv):
         elif FLAGS.mode == 'train':
             root_logger.info("No Evaluation")
         root_logger.info(
-            "Train and/or evaluation configuration are " + str(FLAGS.epochs) + " epochs, " + str(FLAGS.trajectories) + " trajectories each epoch, number of rollouts is " + str(FLAGS.num_rollouts))
+            "Train and/or evaluation configuration are " + str(FLAGS.epochs) + " epochs, " + str(
+                FLAGS.trajectories) + " trajectories each epoch, number of rollouts is " + str(FLAGS.num_rollouts))
         root_logger.info("Core model is " + FLAGS.core_model)
         root_logger.info("Message passing aggregator is " + FLAGS.message_passing_aggregator)
         root_logger.info("Message passing steps are " + str(FLAGS.message_passing_steps))
@@ -577,9 +597,22 @@ def main(argv):
 
         train_start = time.time()
         train_loss_record = learner(model, params)
+        # load train loss
+        if FLAGS.model_last_checkpoint_dir is not None:
+            with open(os.path.join(Path(FLAGS.model_last_checkpoint_dir).parent, 'logs', 'train_loss.pkl'), 'rb') as pickle_file:
+                saved_train_loss_record = pickle.load(pickle_file)
+            train_loss_record['train_epoch_losses'] = train_loss_record['train_epoch_losses'] + \
+                                                      saved_train_loss_record['train_epoch_losses']
+            train_loss_record['train_total_loss'] = torch.sum(torch.stack(train_loss_record['train_epoch_losses']))
+            train_loss_record['train_mean_epoch_loss'] = torch.mean(torch.stack(train_loss_record['train_epoch_losses'])).item()
+            train_loss_record['train_max_epoch_loss'] = torch.max(torch.stack(train_loss_record['train_epoch_losses'])).item()
+            train_loss_record['train_min_epoch_loss'] = torch.min(torch.stack(train_loss_record['train_epoch_losses'])).item()
+            train_loss_record['all_trajectory_train_losses'] = train_loss_record['all_trajectory_train_losses'] + \
+                                                               saved_train_loss_record['all_trajectory_train_losses']
         train_end = time.time()
         train_elapsed_time_in_second = train_end - train_start
-        train_mean_elapsed_time = str(datetime.timedelta(seconds=train_elapsed_time_in_second // (FLAGS.epochs * FLAGS.trajectories)))
+        train_mean_elapsed_time = str(
+            datetime.timedelta(seconds=train_elapsed_time_in_second // (FLAGS.epochs * FLAGS.trajectories)))
         train_elapsed_time = str(datetime.timedelta(seconds=train_elapsed_time_in_second))
 
         root_logger.info("Finished training......")
@@ -591,8 +624,13 @@ def main(argv):
                                       FLAGS.ripple_node_selection, FLAGS.ripple_node_selection_random_top_n,
                                       FLAGS.ripple_node_connection,
                                       FLAGS.ripple_node_ncross)
-        model.load_model(os.path.join(run_dir, "checkpoint_dir", "model_checkpoint"))
-        root_logger.info("Loaded model from " + str(run_dir))
+        if FLAGS.model_last_checkpoint_dir is not None:
+            model.load_model(os.path.join(FLAGS.model_last_checkpoint_dir, "model_checkpoint"))
+            root_logger.info(
+                "Loaded checkpoint file in " + str(FLAGS.model_last_checkpoint_dir) + "and starting retraining...")
+        else:
+            model.load_model(os.path.join(run_dir, "checkpoint_dir", "model_checkpoint"))
+            root_logger.info("Loaded model from " + str(run_dir))
         model.evaluate()
         model.to(device)
         root_logger.info("Core model is " + FLAGS.core_model)
@@ -680,7 +718,8 @@ def main(argv):
         description.append("    Ripple generation method is " + str(FLAGS.ripple_generation) + "\n")
         description.append("    Ripple generation number is " + str(FLAGS.ripple_generation_number) + "\n")
         description.append("    Ripple node selection method is " + str(FLAGS.ripple_node_selection) + "\n")
-        description.append("    Ripple node selection number is " + str(FLAGS.ripple_node_selection_random_top_n) + "\n")
+        description.append(
+            "    Ripple node selection number is " + str(FLAGS.ripple_node_selection_random_top_n) + "\n")
         description.append("    Ripple node connection method is " + str(FLAGS.ripple_node_connection) + "\n")
         description.append("    Ripple node ncross number is " + str(FLAGS.ripple_node_ncross) + "\n")
     description.append("Elapsed time " + elapsed_time + "\n")
@@ -707,8 +746,10 @@ def main(argv):
         # all_trajectory_train_losses_ax.xaxis.set_major_locator(ticker.AutoLocator())
         # all_trajectory_train_losses_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
 
-        train_loss_ax.plot(range(1, len(train_loss_record['train_epoch_losses']) + 1), train_loss_record['train_epoch_losses'])
-        all_trajectory_train_losses_ax.plot(range(1, len(train_loss_record['all_trajectory_train_losses']) + 1), train_loss_record['all_trajectory_train_losses'])
+        train_loss_ax.plot(range(1, len(train_loss_record['train_epoch_losses']) + 1),
+                           train_loss_record['train_epoch_losses'])
+        all_trajectory_train_losses_ax.plot(range(1, len(train_loss_record['all_trajectory_train_losses']) + 1),
+                                            train_loss_record['all_trajectory_train_losses'])
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
         eval_mse_loss_ax = fig.add_subplot(gs[0, 1])
         eval_l1_loss_ax = fig.add_subplot(gs[0, 2])
@@ -728,8 +769,10 @@ def main(argv):
         eval_l1_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
         '''
 
-        eval_mse_loss_ax.plot(range(1, len(eval_loss_record['eval_mse_losses']) + 1), eval_loss_record['eval_mse_losses'], 'o')
-        eval_l1_loss_ax.plot(range(1, len(eval_loss_record['eval_l1_losses']) + 1), eval_loss_record['eval_l1_losses'], 'o')
+        eval_mse_loss_ax.plot(range(1, len(eval_loss_record['eval_mse_losses']) + 1),
+                              eval_loss_record['eval_mse_losses'], 'o')
+        eval_l1_loss_ax.plot(range(1, len(eval_loss_record['eval_l1_losses']) + 1), eval_loss_record['eval_l1_losses'],
+                             'o')
     fig.savefig(os.path.join(run_dir, "logs", "Train_and_Eval_Loss.png"))
 
     # save max, min and mean value of train and eval losses as csv
@@ -860,6 +903,7 @@ def main(argv):
     with open(csv_path, 'w', newline='') as csvfile:
         csv_writer = csv.writer(csvfile)
         csv_writer.writerows(entry)
+
 
 if __name__ == '__main__':
     app.run(main)
