@@ -132,8 +132,8 @@ flags.DEFINE_string('logging_dir',
                     os.path.join(run_dir, 'logs'),
                     'Log file directory')
 flags.DEFINE_string('model_last_checkpoint_dir',
-                    # None,
-                    os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\flag_simple\\Tue-Nov-30-16-00-15-2021', 'checkpoint_dir'),
+                    None,
+                    # os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\flag_simple\\Tue-Nov-30-17-03-11-2021', 'checkpoint_dir'),
                     'Path to the checkpoint file of a network that should continue training')
 flags.DEFINE_string('optimizer_last_checkpoint_file',
                     None,
@@ -611,6 +611,14 @@ def main(argv):
                                                                saved_train_loss_record['all_trajectory_train_losses']
         train_end = time.time()
         train_elapsed_time_in_second = train_end - train_start
+        if FLAGS.model_last_checkpoint_dir is not None:
+            with open(os.path.join(Path(FLAGS.model_last_checkpoint_dir).parent, 'logs', 'train_elapsed_time_in_second.pkl'), 'rb') as pickle_file:
+                saved_train_elapsed_time_in_second = pickle.load(pickle_file)
+            train_elapsed_time_in_second += saved_train_elapsed_time_in_second
+        train_elapsed_time_in_second_pkl_file = os.path.join(FLAGS.logging_dir, 'train_elapsed_time_in_second.pkl')
+        Path(train_elapsed_time_in_second_pkl_file).touch()
+        with open(train_elapsed_time_in_second_pkl_file, 'wb') as f:
+            pickle.dump(train_elapsed_time_in_second, f)
         train_mean_elapsed_time = str(
             datetime.timedelta(seconds=train_elapsed_time_in_second // (FLAGS.epochs * FLAGS.trajectories)))
         train_elapsed_time = str(datetime.timedelta(seconds=train_elapsed_time_in_second))
@@ -651,7 +659,17 @@ def main(argv):
     end_datetime = datetime.datetime.fromtimestamp(end).strftime('%c')
     root_logger.info("Program ended at time " + end_datetime)
     elapsed_time_in_second = end - start
+    if FLAGS.model_last_checkpoint_dir is not None:
+        with open(
+                os.path.join(Path(FLAGS.model_last_checkpoint_dir).parent, 'logs', 'elapsed_time_in_second.pkl'),
+                'rb') as pickle_file:
+            saved_elapsed_time_in_second = pickle.load(pickle_file)
+        elapsed_time_in_second += saved_elapsed_time_in_second
     elapsed_time = str(datetime.timedelta(seconds=elapsed_time_in_second))
+    elapsed_time_in_second_pkl_file = os.path.join(FLAGS.logging_dir, 'elapsed_time_in_second.pkl')
+    Path(elapsed_time_in_second_pkl_file).touch()
+    with open(elapsed_time_in_second_pkl_file, 'wb') as f:
+        pickle.dump(elapsed_time_in_second, f)
 
     # run summary
     root_logger.info("")
