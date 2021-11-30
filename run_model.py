@@ -163,8 +163,8 @@ steps = None
 hpc_start_time = time.time()
 # bwcluster max time limitation of gpu_8, in seconds
 # leave 2 hours for possible evaluation
-# hpc_default_max_time = 172800 - 3600 * 2
-hpc_default_max_time = 3 * 60
+hpc_default_max_time = 172800 - 3600 * 2
+# hpc_default_max_time = 3 * 60
 hpc_max_time = hpc_start_time + hpc_default_max_time
 
 
