@@ -55,7 +55,7 @@ device = torch.device('cuda')
 FLAGS = flags.FLAGS
 flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
                   'Select model to run.')
-flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
+flags.DEFINE_enum('mode', 'eval', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
@@ -132,8 +132,8 @@ flags.DEFINE_string('logging_dir',
                     os.path.join(run_dir, 'logs'),
                     'Log file directory')
 flags.DEFINE_string('model_last_checkpoint_dir',
-                    None,
-                    # os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\flag_simple\\Tue-Nov-30-17-03-11-2021', 'checkpoint_dir'),
+                    # None,
+                    os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\flag_simple\\Tue-Nov-30-17-04-40-2021', 'checkpoint_dir'),
                     'Path to the checkpoint file of a network that should continue training')
 flags.DEFINE_string('optimizer_last_checkpoint_file',
                     None,
@@ -524,7 +524,7 @@ def main(argv):
 
     if FLAGS.mode == "eval" or is_all:
         if FLAGS.model_last_checkpoint_dir is not None:
-            run_dir = Path(model_last_checkpoint_dir).parents[0]
+            run_dir = Path(FLAGS.model_last_checkpoint_dir).parents[0]
         else:
             # find latest directory in output directory
             all_subdirs = os.listdir(output_dir)
@@ -669,7 +669,10 @@ def main(argv):
             saved_elapsed_time_in_second = pickle.load(pickle_file)
         elapsed_time_in_second += saved_elapsed_time_in_second
     elapsed_time = str(datetime.timedelta(seconds=elapsed_time_in_second))
-    elapsed_time_in_second_pkl_file = os.path.join(FLAGS.logging_dir, 'elapsed_time_in_second.pkl')
+    if FLAGS.model_last_checkpoint_dir is not None:
+        elapsed_time_in_second_pkl_file = os.path.join(os.path.join(run_dir, 'logs'), 'elapsed_time_in_second.pkl')
+    else:
+        elapsed_time_in_second_pkl_file = os.path.join(FLAGS.logging_dir, 'elapsed_time_in_second.pkl')
     Path(elapsed_time_in_second_pkl_file).touch()
     with open(elapsed_time_in_second_pkl_file, 'wb') as f:
         pickle.dump(elapsed_time_in_second, f)
@@ -696,7 +699,7 @@ def main(argv):
         root_logger.info("  Ripple node connection method is " + str(FLAGS.ripple_node_connection))
         root_logger.info("  Ripple node ncross number is " + str(FLAGS.ripple_node_ncross))
     root_logger.info("Elapsed time " + elapsed_time)
-    root_logger.info("Run output directory is " + run_dir)
+    root_logger.info("Run output directory is " + str(run_dir))
     root_logger.info("=======================Run Summary=======================")
     root_logger.info("")
     root_logger.info("--------------------train loss record--------------------")
@@ -711,7 +714,10 @@ def main(argv):
     root_logger.info("")
     root_logger.info("--------------------eval loss record---------------------")
     if FLAGS.mode == "eval" or FLAGS.mode == "all":
-        eval_loss_pkl_file = os.path.join(FLAGS.logging_dir, 'eval_loss.pkl')
+        if FLAGS.model_last_checkpoint_dir is not None:
+            eval_loss_pkl_file = os.path.join(os.path.join(run_dir, 'logs'), 'eval_loss.pkl')
+        else:
+            eval_loss_pkl_file = os.path.join(FLAGS.logging_dir, 'eval_loss.pkl')
         Path(eval_loss_pkl_file).touch()
         with open(eval_loss_pkl_file, 'wb') as f:
             pickle.dump(eval_loss_record, f)
@@ -744,7 +750,8 @@ def main(argv):
         description.append("    Ripple node connection method is " + str(FLAGS.ripple_node_connection) + "\n")
         description.append("    Ripple node ncross number is " + str(FLAGS.ripple_node_ncross) + "\n")
     description.append("Elapsed time " + elapsed_time + "\n")
-    description.append("Train mean elapsed time " + train_mean_elapsed_time + "\n")
+    if FLAGS.mode == 'train' or FLAGS.mode == 'all':
+        description.append("Train mean elapsed time " + train_mean_elapsed_time + "\n")
     description_txt = ""
     for item in description:
         description_txt += item
@@ -797,7 +804,10 @@ def main(argv):
     fig.savefig(os.path.join(run_dir, "logs", "Train_and_Eval_Loss.png"))
 
     # save max, min and mean value of train and eval losses as csv
-    csv_path = os.path.join(FLAGS.logging_dir, 'result.csv')
+    if FLAGS.model_last_checkpoint_dir is not None:
+        csv_path = os.path.join(os.path.join(run_dir, 'logs'), 'result.csv')
+    else:
+        csv_path = os.path.join(FLAGS.logging_dir, 'result.csv')
     try:
         Path(csv_path).touch()
     except FileExistsError:
@@ -911,7 +921,8 @@ def main(argv):
             entry.append(["Ripple node connection method", ""])
             entry.append(["Ripple node ncross number", ""])
         entry.append(["Elapsed time", elapsed_time])
-        entry.append(["Train mean elapsed time", train_mean_elapsed_time])
+        if FLAGS.mode == 'train' or FLAGS.mode == 'all':
+            entry.append(["Train mean elapsed time", train_mean_elapsed_time])
         entry.append(["Mean train epoch loss", ""])
         entry.append(["Max train epoch loss", ""])
         entry.append(["Min train epoch loss", ""])
