@@ -523,12 +523,15 @@ def main(argv):
         Path(FLAGS.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
     if FLAGS.mode == "eval" or is_all:
-        # find latest directory in output directory
-        all_subdirs = os.listdir(output_dir)
-        all_subdirs = map(lambda d: os.path.join(output_dir, d), all_subdirs)
-        all_subdirs = [d for d in all_subdirs if os.path.isdir(d)]
-        latest_subdir = max(all_subdirs, key=os.path.getmtime)
-        run_dir = latest_subdir
+        if FLAGS.model_last_checkpoint_dir is not None:
+            run_dir = Path(model_last_checkpoint_dir).parents[0]
+        else:
+            # find latest directory in output directory
+            all_subdirs = os.listdir(output_dir)
+            all_subdirs = map(lambda d: os.path.join(output_dir, d), all_subdirs)
+            all_subdirs = [d for d in all_subdirs if os.path.isdir(d)]
+            latest_subdir = max(all_subdirs, key=os.path.getmtime)
+            run_dir = latest_subdir
         # save program configuration in file title
         if not is_all:
             run_config_record = FLAGS.mode + "_rollout" + str(FLAGS.num_rollouts)
