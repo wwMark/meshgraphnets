@@ -8,7 +8,7 @@ Paper: [arxiv.org/abs/2010.03409](https://arxiv.org/abs/2010.03409)
 
 ## Overview
 
-The code in this repository is a PyTorch version of Learning Mesh-Based Simulation with Graph Networks. Currently, the code of **cloth simulation** can be
+The code in this repository is the PyTorch version of Learning Mesh-Based Simulation with Graph Networks. Currently, the code of **cloth simulation** can be
 run on both windows and linux. Development environment is PyCharm 2021.1.3. Package dependencies are defined
 in requirements.txt, please install all dependencies before runnning. The result of this version of MGN network is not 100% conform to the original code, please tune it according to your need. Other GNN networks code will be added to this repository in the future to explore the GNN performance for physical simulation.
 
@@ -27,6 +27,10 @@ Download a dataset:
     mkdir -p ${DATA}
     bash meshgraphnets/download_dataset.sh flag_simple ${DATA}
 
+Go to the dataset directory and generate .idx file(needed by package tfrecord for reading .tfrecord file in PyTorch):
+
+    python -m tfrecord.tools.tfrecord2idx <file>.tfrecord <file>.id
+    
 Configure running goals by setting the variables and flags variables at the beginning of run_model.py, which includes
 running mode (training/evaluation), model, epochs, saving path and etc.
 

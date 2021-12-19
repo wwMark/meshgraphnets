@@ -30,6 +30,8 @@ import cloth_model
 import cloth_eval
 import cfd_model
 import cfd_eval
+import deform_model
+import deform_eval
 
 import dataset
 import common
@@ -53,25 +55,25 @@ device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth'],
+flags.DEFINE_enum('model', 'deform', ['cfd', 'cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
-flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
+flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 25, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 2, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 10, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
                   ['encode_process_decode', 'encode_process_decode_max_pooling', 'encode_process_decode_lstm',
                    'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
                   'Core model to be used')
-flags.DEFINE_enum('message_passing_aggregator', 'max', ['sum', 'max', 'min', 'mean'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 1, 'No. of training epochs')
+flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean'], 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 15, 'No. of training epochs')
 flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
@@ -110,23 +112,26 @@ flags.DEFINE_integer('ripple_node_ncross', 1,
 
 # directory setting
 flags.DEFINE_string('model_last_run_dir',
-                    # None,
-                    os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\flag_simple\\Wed-Dec-15-11-08-26-2021'),
+                    None,
+                    # os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\flag_simple\\Wed-Dec-15-11-39-41-2021'),
                     'Path to the checkpoint file of a network that should continue training')
 
 # decide whether to use the configuration from last run step
 flags.DEFINE_boolean('use_prev_config', True, 'Decide whether to use the configuration from last run step')
 
 # hpc max run time setting
-# flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 2, 'Max run time on hpc')
-flags.DEFINE_integer('hpc_default_max_time', 30, 'Max run time on hpc')
+flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 2, 'Max run time on hpc')
+# flags.DEFINE_integer('hpc_default_max_time', 180, 'Max run time on hpc')
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
                 size=2, batch=2, model=cfd_model, evaluator=cfd_eval, loss_type='cfd',
                 stochastic_message_passing_used='False'),
-    'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
+    'cloth': dict(noise=0.001, gamma=0.1, field='world_pos', history=True,
                   size=3, batch=1, model=cloth_model, evaluator=cloth_eval, loss_type='cloth',
+                  stochastic_message_passing_used='False'),
+    'deform': dict(noise=0.003, gamma=0.1, field='world_pos', history=False,
+                  size=3, batch=2, model=deform_model, evaluator=deform_eval, loss_type='deform',
                   stochastic_message_passing_used='False')
 }
 
@@ -349,6 +354,14 @@ def learner(model, params, run_step_config):
             for data_frame_index, data_frame in enumerate(trajectory):
                 count += 1
                 data_frame = squeeze_data_frame(data_frame)
+                '''
+                    Code for printing all node types in an input
+                    deforming_plate dataset has node type [0, 1, 3]
+                '''
+                '''node_type_list = []
+                for node_type_item in data_frame['node_type']:
+                    node_type_list.append(node_type_item.item())
+                print(list(set(node_type_list)))'''
                 network_output = model(data_frame, is_training)
                 loss = loss_fn(loss_type, data_frame, network_output, model, params)
                 # if count % 1000 == 0:
@@ -438,7 +451,21 @@ def loss_fn(loss_type, inputs, network_output, model, params):
         error = torch.sum((target_normalized - network_output) ** 2, dim=1)
         loss = torch.mean(error[loss_mask])
         return loss
+    elif loss_type == 'deform':
+        world_pos = inputs['world_pos']
+        target_world_pos = inputs['target|world_pos']
 
+        cur_position = world_pos
+        target_position = target_world_pos
+        target_velocity = target_position - cur_position
+        target_normalized = model.get_output_normalizer()(target_velocity).to(device)
+
+        # build loss
+        node_type = inputs['node_type']
+        loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
+        error = torch.sum((target_normalized - network_output) ** 2, dim=1)
+        loss = torch.mean(error[loss_mask])
+        return loss
 
 def evaluator(params, model, run_step_config):
     root_logger = logging.getLogger()
@@ -463,6 +490,9 @@ def evaluator(params, model, run_step_config):
         elif model_type == 'cfd':
             mse_loss = mse_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
             l1_loss = l1_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
+        elif model_type == 'deform':
+            mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
+            l1_loss = l1_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
         mse_losses.append(mse_loss.cpu())
         l1_losses.append(l1_loss.cpu())
         root_logger.info("    trajectory evaluation mse loss")
@@ -717,7 +747,8 @@ def main(argv):
         model.evaluate()
         model.to(device)
         eval_loss_record = evaluator(params, model, run_step_config)
-        train_loss_record = pickle_load(os.path.join(last_run_step_dir, 'log', 'train_loss.pkl'))
+        if last_run_dir is not None:
+            train_loss_record = pickle_load(os.path.join(last_run_step_dir, 'log', 'train_loss.pkl'))
         root_logger.info("Finished evaluating......")
     run_step_end_time = time.time()
     run_step_end_datetime = datetime.datetime.fromtimestamp(run_step_end_time).strftime('%c')
