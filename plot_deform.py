@@ -25,7 +25,7 @@ rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 
 FLAGS = flags.FLAGS
 # flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Wed-Dec-15-17-50-23-2021\\1\\rollout\\rollout.pkl', 'Path to rollout pickle file')
-flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Sat-Dec-18-16-23-22-2021\\1\\rollout\\rollout.pkl', 'Path to rollout pickle file')
+flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Sat-Dec-25-17-16-32-2021\\1\\rollout\\rollout.pkl', 'Path to rollout pickle file')
 # flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
 
 
@@ -97,8 +97,8 @@ def main(unused_argv):
         ax_pred.set_title('PRED Trajectory %d Step %d' % (traj, step))
         return fig,
 
-    anima = animation.FuncAnimation(fig, animate, frames=num_frames * 20, interval=100)
-    writervideo = animation.FFMpegWriter(fps=60)
+    anima = animation.FuncAnimation(fig, animate, frames=num_frames * 2, interval=100)
+    writervideo = animation.FFMpegWriter(fps=30)
     anima.save("ani.mp4", writer=writervideo)
     # plt.show(block=True)
 

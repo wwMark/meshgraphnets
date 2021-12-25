@@ -46,6 +46,9 @@ import datetime
 
 import csv
 
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
+
 import matplotlib
 
 matplotlib.use('AGG')
@@ -59,11 +62,11 @@ flags.DEFINE_enum('model', 'deform', ['cfd', 'cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
-flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
+flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 10, 'No. of training epochs')
+flags.DEFINE_integer('epochs', 5, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
 flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
@@ -73,7 +76,7 @@ flags.DEFINE_enum('core_model', 'encode_process_decode',
                    'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
                   'Core model to be used')
 flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 15, 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 5, 'No. of training epochs')
 flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
@@ -113,7 +116,7 @@ flags.DEFINE_integer('ripple_node_ncross', 1,
 # directory setting
 flags.DEFINE_string('model_last_run_dir',
                     None,
-                    # os.path.join('C:\\Users\\Mark\\iCloudDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\flag_simple\\Wed-Dec-15-11-39-41-2021'),
+                    # os.path.join('C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Sat-Dec-25-17-50-02-2021'),
                     'Path to the checkpoint file of a network that should continue training')
 
 # decide whether to use the configuration from last run step
@@ -275,7 +278,6 @@ def process_trajectory(trajectory_data, params, model_type, dataset_dir, add_tar
         trajectory = split_and_preprocess(params, model_type)(trajectory)
     return trajectory
 
-
 def pickle_save(path, data):
     with open(path, 'wb') as f:
         pickle.dump(data, f)
@@ -338,13 +340,18 @@ def learner(model, params, run_step_config):
                 is_train_break = True
                 break
 
-        ds_loader = dataset.load_dataset(run_step_config['dataset_dir'], 'train', batch_size=batch_size,
+        ds_loader = dataset.load_dataset(run_step_config['dataset_dir'], 'valid', batch_size=batch_size,
                                          prefetch_factor=prefetch_factor,
                                          add_targets=True, split_and_preprocess=True)
         # every time when model.train is called, model will train itself with the whole dataset
         root_logger.info("Epoch " + str(epoch + 1) + "/" + str(run_step_config['epochs']))
         epoch_training_loss = 0.0
         ds_iterator = iter(ds_loader)
+
+        # decide single- or multi-gpu train
+        gpu_count = torch.cuda.device_count()
+        root_logger.info("Training with " + str(gpu_count) + " GPUs")
+
         for trajectory_index in range(run_step_config['trajectories']):
             root_logger.info(
                 "    trajectory index " + str(trajectory_index + 1) + "/" + str(run_step_config['trajectories']))
@@ -624,6 +631,7 @@ def main(argv):
     continue_prev_run = False
     if last_run_dir is not None and use_prev_config:
         last_run_step_dir = find_nth_latest_run_step(last_run_dir, 1)
+        print(last_run_dir)
         run_step_config = pickle_load(os.path.join(last_run_step_dir, 'log', 'config.pkl'))
         run_step_config['last_run_dir'] = last_run_dir
         run_step_config['last_run_step_dir'] = last_run_step_dir

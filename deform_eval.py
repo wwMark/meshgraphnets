@@ -23,7 +23,8 @@ def _rollout(model, initial_state, num_steps, target_world_pos):
             prediction = model({**initial_state, 'world_pos': cur_pos}, is_training=False)
 
         next_pos = torch.where(mask, torch.squeeze(prediction), torch.squeeze(cur_pos))
-        next_pos = torch.where(obstacle_mask, torch.squeeze(target_world_pos), torch.squeeze(next_pos))
+
+        next_pos = torch.where(obstacle_mask, torch.squeeze(target_world_pos), next_pos)
 
         trajectory.append(cur_pos)
         return next_pos, trajectory
