@@ -68,7 +68,7 @@ flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow
 
 flags.DEFINE_integer('epochs', 4, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 15, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
+flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
@@ -115,9 +115,9 @@ flags.DEFINE_integer('ripple_node_ncross', 1,
 
 # directory setting
 flags.DEFINE_string('model_last_run_dir',
-                    # None,
+                    None,
                     # os.path.join('C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Sat-Dec-25-17-50-02-2021'),
-                    os.path.join('/home/i53/student/ruoheng_ma/meshgraphnets/output/deforming_plate', 'Mon-Jan--3-15-18-53-2022'),
+                    # os.path.join('/home/i53/student/ruoheng_ma/meshgraphnets/output/deforming_plate', 'Mon-Jan--3-15-18-53-2022'),
                     'Path to the checkpoint file of a network that should continue training')
 
 # decide whether to use the configuration from last run step
@@ -125,7 +125,7 @@ flags.DEFINE_boolean('use_prev_config', True, 'Decide whether to use the configu
 
 # hpc max run time setting
 # flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 2, 'Max run time on hpc')
-flags.DEFINE_integer('hpc_default_max_time', 150, 'Max run time on hpc')
+flags.DEFINE_integer('hpc_default_max_time', 1500, 'Max run time on hpc')
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,

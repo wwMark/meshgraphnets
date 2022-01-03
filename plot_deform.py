@@ -17,7 +17,7 @@ import mpl_toolkits.mplot3d as p3d
 import torch
 
 root_dir = pathlib.Path(__file__).parent.resolve()
-output_dir = os.path.join(root_dir, 'output', 'flag_simple')
+output_dir = os.path.join(root_dir, 'output', 'deforming_plate')
 all_subdirs = [os.path.join(output_dir, d) for d in os.listdir(output_dir) if
                os.path.isdir(os.path.join(output_dir, d))]
 latest_subdir = max(all_subdirs, key=os.path.getmtime)
@@ -25,7 +25,7 @@ rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 
 FLAGS = flags.FLAGS
 # flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Wed-Dec-15-17-50-23-2021\\1\\rollout\\rollout.pkl', 'Path to rollout pickle file')
-flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Sat-Dec-25-17-16-32-2021\\1\\rollout\\rollout.pkl', 'Path to rollout pickle file')
+flags.DEFINE_string('rollout_path', '/home/i53/student/ruoheng_ma/meshgraphnets/output/deforming_plate/Mon-Jan--3-17-04-22-2022/1/rollout/rollout.pkl', 'Path to rollout pickle file')
 # flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
 
 
