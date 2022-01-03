@@ -66,9 +66,9 @@ flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 5, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 4, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 15, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
@@ -76,7 +76,7 @@ flags.DEFINE_enum('core_model', 'encode_process_decode',
                    'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
                   'Core model to be used')
 flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 5, 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 1, 'No. of training epochs')
 flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
@@ -115,16 +115,17 @@ flags.DEFINE_integer('ripple_node_ncross', 1,
 
 # directory setting
 flags.DEFINE_string('model_last_run_dir',
-                    None,
+                    # None,
                     # os.path.join('C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Sat-Dec-25-17-50-02-2021'),
+                    os.path.join('/home/i53/student/ruoheng_ma/meshgraphnets/output/deforming_plate', 'Mon-Jan--3-15-18-53-2022'),
                     'Path to the checkpoint file of a network that should continue training')
 
 # decide whether to use the configuration from last run step
 flags.DEFINE_boolean('use_prev_config', True, 'Decide whether to use the configuration from last run step')
 
 # hpc max run time setting
-flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 2, 'Max run time on hpc')
-# flags.DEFINE_integer('hpc_default_max_time', 180, 'Max run time on hpc')
+# flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 2, 'Max run time on hpc')
+flags.DEFINE_integer('hpc_default_max_time', 150, 'Max run time on hpc')
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
@@ -642,7 +643,7 @@ def main(argv):
 
     # setup directory structure for saving checkpoint, train configuration, rollout result and log
     root_dir = pathlib.Path(__file__).parent.resolve()
-    dataset_dir = os.path.join(root_dir, 'data', dataset_name)
+    dataset_dir = os.path.join('/home/temp_store/ruoheng_ma', 'data', dataset_name)
     output_dir = os.path.join(root_dir, 'output', dataset_name)
     run_step_dir = prepare_files_and_directories(last_run_dir, output_dir)
     checkpoint_dir = os.path.join(run_step_dir, 'checkpoint')
@@ -710,6 +711,7 @@ def main(argv):
     log_run_summary(root_logger, run_step_config, run_step_dir)
 
     is_train_break = False
+    train_loss_record = None
     if run_step_config['mode'] == 'train' or run_step_config['mode'] == 'all':
         # record train time
         train_start = time.time()
@@ -722,8 +724,8 @@ def main(argv):
         # load train loss if exist and combine the previous and current train loss
         if last_run_dir is not None:
             saved_train_loss_record = pickle_load(os.path.join(last_run_step_dir, 'log', 'train_loss.pkl'))
-            train_loss_record['train_epoch_losses'] = train_loss_record['train_epoch_losses'] + \
-                                                      saved_train_loss_record['train_epoch_losses']
+            train_loss_record['train_epoch_losses'] = saved_train_loss_record['train_epoch_losses'] + \
+                                                      train_loss_record['train_epoch_losses']
             train_loss_record['train_total_loss'] = torch.sum(torch.stack(train_loss_record['train_epoch_losses']))
             train_loss_record['train_mean_epoch_loss'] = torch.mean(
                 torch.stack(train_loss_record['train_epoch_losses'])).item()
@@ -731,8 +733,8 @@ def main(argv):
                 torch.stack(train_loss_record['train_epoch_losses'])).item()
             train_loss_record['train_min_epoch_loss'] = torch.min(
                 torch.stack(train_loss_record['train_epoch_losses'])).item()
-            train_loss_record['all_trajectory_train_losses'] = train_loss_record['all_trajectory_train_losses'] + \
-                                                               saved_train_loss_record['all_trajectory_train_losses']
+            train_loss_record['all_trajectory_train_losses'] = saved_train_loss_record['all_trajectory_train_losses'] + \
+                                                               train_loss_record['all_trajectory_train_losses']
             # load train elapsed time if exist and combine the previous and current train loss
             saved_train_elapsed_time_in_second = pickle_load(
                 os.path.join(last_run_step_dir, 'log', 'train_elapsed_time_in_second.pkl'))
@@ -755,7 +757,7 @@ def main(argv):
         model.evaluate()
         model.to(device)
         eval_loss_record = evaluator(params, model, run_step_config)
-        if last_run_dir is not None:
+        if last_run_dir is not None and train_loss_record is None:
             train_loss_record = pickle_load(os.path.join(last_run_step_dir, 'log', 'train_loss.pkl'))
         root_logger.info("Finished evaluating......")
     run_step_end_time = time.time()
