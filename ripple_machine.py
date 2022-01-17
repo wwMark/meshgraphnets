@@ -123,7 +123,7 @@ class RippleNodeConnector():
                 (torch.tensor(senders_list, device=device), torch.tensor(receivers_list, device=device)), dim=0)
             receivers = torch.cat(
                 (torch.tensor(receivers_list, device=device), torch.tensor(senders_list, device=device)), dim=0)
-            if model_type == 'cloth_model':
+            if model_type == 'cloth_model' or model_type == 'deform_model':
                 relative_target_feature = (torch.index_select(input=target_feature, dim=0, index=senders) -
                                       torch.index_select(input=target_feature, dim=0, index=receivers))
                 relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
@@ -139,6 +139,8 @@ class RippleNodeConnector():
                 edge_features = torch.cat((
                     relative_mesh_pos,
                     torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+            else:
+                raise Exception("Model type is not specified in RippleNodeConnector.")
             edge_features = edge_normalizer(edge_features, is_training)
 
             mesh_edges = graph.edge_sets[0]
@@ -157,7 +159,7 @@ class RippleNodeConnector():
                     (torch.tensor(senders_list, device=device), torch.tensor(receivers_list, device=device)), dim=0)
                 receivers = torch.cat(
                     (torch.tensor(receivers_list, device=device), torch.tensor(senders_list, device=device)), dim=0)
-                if model_type == 'cloth_model':
+                if model_type == 'cloth_model' or model_type == 'deform_model':
                     relative_target_feature = (torch.index_select(input=target_feature, dim=0, index=senders) -
                                                torch.index_select(input=target_feature, dim=0, index=receivers))
                     relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
@@ -173,6 +175,8 @@ class RippleNodeConnector():
                     edge_features = torch.cat((
                         relative_mesh_pos,
                         torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+                else:
+                    raise Exception("Model type is not specified in RippleNodeConnector.")
                 edge_features = edge_normalizer(edge_features, is_training)
 
                 mesh_edges = graph.edge_sets[0]
@@ -198,7 +202,7 @@ class RippleNodeConnector():
                     (torch.tensor(senders_list, device=device), torch.tensor(receivers_list, device=device)), dim=0)
                 receivers = torch.cat(
                     (torch.tensor(receivers_list, device=device), torch.tensor(senders_list, device=device)), dim=0)
-                if model_type == 'cloth_model':
+                if model_type == 'cloth_model' or model_type == 'deform_model':
                     relative_target_feature = (torch.index_select(input=target_feature, dim=0, index=senders) -
                                                torch.index_select(input=target_feature, dim=0, index=receivers))
                     relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
@@ -214,6 +218,8 @@ class RippleNodeConnector():
                     edge_features = torch.cat((
                         relative_mesh_pos,
                         torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+                else:
+                    raise Exception("Model type is not specified in RippleNodeConnector.")
                 edge_features = edge_normalizer(edge_features, is_training)
 
                 mesh_edges = graph.edge_sets[0]
@@ -229,7 +235,7 @@ class RippleNodeConnector():
                 (torch.tensor(senders_list, device=device, dtype=torch.int32), torch.tensor(receivers_list, device=device, dtype=torch.int32)), dim=0)
             receivers = torch.cat(
                 (torch.tensor(receivers_list, device=device), torch.tensor(senders_list, device=device)), dim=0)
-            if model_type == 'cloth_model':
+            if model_type == 'cloth_model' or model_type == 'deform_model':
                 relative_target_feature = (torch.index_select(input=target_feature, dim=0, index=senders) -
                                            torch.index_select(input=target_feature, dim=0, index=receivers))
                 relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
@@ -245,6 +251,8 @@ class RippleNodeConnector():
                 edge_features = torch.cat((
                     relative_mesh_pos,
                     torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+            else:
+                raise Exception("Model type is not specified in RippleNodeConnector.")
             edge_features = edge_normalizer(edge_features, is_training)
 
             mesh_edges = graph.edge_sets[0]
