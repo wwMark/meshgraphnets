@@ -64,7 +64,7 @@ flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
 flags.DEFINE_integer('epochs', 4, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 15, 'No. of training trajectories')
@@ -124,8 +124,8 @@ flags.DEFINE_string('model_last_run_dir',
 flags.DEFINE_boolean('use_prev_config', True, 'Decide whether to use the configuration from last run step')
 
 # hpc max run time setting
-# flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 2, 'Max run time on hpc')
-flags.DEFINE_integer('hpc_default_max_time', 1500, 'Max run time on hpc')
+flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 2, 'Max run time on hpc')
+# flags.DEFINE_integer('hpc_default_max_time', 1500, 'Max run time on hpc')
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
@@ -341,7 +341,7 @@ def learner(model, params, run_step_config):
                 is_train_break = True
                 break
 
-        ds_loader = dataset.load_dataset(run_step_config['dataset_dir'], 'valid', batch_size=batch_size,
+        ds_loader = dataset.load_dataset(run_step_config['dataset_dir'], 'train', batch_size=batch_size,
                                          prefetch_factor=prefetch_factor,
                                          add_targets=True, split_and_preprocess=True)
         # every time when model.train is called, model will train itself with the whole dataset
@@ -643,7 +643,8 @@ def main(argv):
 
     # setup directory structure for saving checkpoint, train configuration, rollout result and log
     root_dir = pathlib.Path(__file__).parent.resolve()
-    dataset_dir = os.path.join('/home/temp_store/ruoheng_ma', 'data', dataset_name)
+    # dataset_dir = os.path.join('/home/temp_store/ruoheng_ma', 'data', dataset_name)
+    dataset_dir = os.path.join('data', dataset_name)
     output_dir = os.path.join(root_dir, 'output', dataset_name)
     run_step_dir = prepare_files_and_directories(last_run_dir, output_dir)
     checkpoint_dir = os.path.join(run_step_dir, 'checkpoint')
@@ -687,7 +688,7 @@ def main(argv):
     Path(os.path.join(run_step_dir, run_config_record)).touch()
 
     root_logger.info("Program started at time " + str(run_step_start_datetime))
-    params = PARAMETERS[FLAGS.model]
+    params = PARAMETERS[run_step_config['model']]
 
     # create or load model
     root_logger.info("Start training......")
