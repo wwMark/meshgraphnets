@@ -62,21 +62,21 @@ flags.DEFINE_enum('model', 'deform', ['cfd', 'cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
-flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
+flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 4, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 15, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
                   ['encode_process_decode', 'encode_process_decode_max_pooling', 'encode_process_decode_lstm',
                    'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
                   'Core model to be used')
-flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 1, 'No. of training epochs')
+flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 5, 'No. of training epochs')
 flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
@@ -469,8 +469,11 @@ def loss_fn(loss_type, inputs, network_output, model, params):
         target_normalized = model.get_output_normalizer()(target_velocity).to(device)
 
         # build loss
+        # print(network_output[187])
         node_type = inputs['node_type']
-        loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
+        # loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
+        loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device).int())
+        loss_mask = torch.logical_not(loss_mask)
         error = torch.sum((target_normalized - network_output) ** 2, dim=1)
         loss = torch.mean(error[loss_mask])
         return loss
@@ -499,7 +502,7 @@ def evaluator(params, model, run_step_config):
             mse_loss = mse_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
             l1_loss = l1_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
         elif model_type == 'deform':
-            mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
+            mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['cur_velocities'])
             l1_loss = l1_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
         mse_losses.append(mse_loss.cpu())
         l1_losses.append(l1_loss.cpu())

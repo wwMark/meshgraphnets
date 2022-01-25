@@ -24,8 +24,8 @@ latest_subdir = max(all_subdirs, key=os.path.getmtime)
 rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 
 FLAGS = flags.FLAGS
-# flags.DEFINE_string('rollout_path', 'C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Wed-Dec-15-17-50-23-2021\\1\\rollout\\rollout.pkl', 'Path to rollout pickle file')
-flags.DEFINE_string('rollout_path', '/home/i53/student/ruoheng_ma/meshgraphnets/output/deforming_plate/Mon-Jan--3-17-04-22-2022/1/rollout/rollout.pkl', 'Path to rollout pickle file')
+flags.DEFINE_string('rollout_path', 'E:\\meshgraphnets\\output\\deforming_plate\\Tue-Jan-25-17-50-18-2022\\1\\rollout\\rollout.pkl', 'Path to rollout pickle file')
+# flags.DEFINE_string('rollout_path', '/home/i53/student/ruoheng_ma/meshgraphnets/output/deforming_plate/Mon-Jan--3-17-04-22-2022/1/rollout/rollout.pkl', 'Path to rollout pickle file')
 # flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
 
 
@@ -34,8 +34,12 @@ def main(unused_argv):
     with open(FLAGS.rollout_path, 'rb') as fp:
         rollout_data = pickle.load(fp)
     fig = plt.figure(figsize=(19.2, 10.8))
-    ax_origin = fig.add_subplot(211, projection='3d')
-    ax_pred = fig.add_subplot(212, projection='3d')
+    ax_origin = fig.add_subplot(231, projection='3d')
+    ax_pred = fig.add_subplot(234, projection='3d')
+
+    ax_cur_positions = fig.add_subplot(235, projection='3d')
+    ax_cur_velocities = fig.add_subplot(236, projection='3d')
+
     skip = 10
     num_steps = rollout_data[0]['gt_pos'].shape[0]
     # print(num_steps)
@@ -54,10 +58,13 @@ def main(unused_argv):
     def animate(num):
         # step = (num * skip) % num_steps
         # traj = 0
-        traj = (num * 1) // num_steps
-        step = (num * 1) % num_steps
+        skip = 20
+        traj = (num * skip) // num_steps
+        step = (num * skip) % num_steps
         ax_origin.cla()
         ax_pred.cla()
+        ax_cur_positions.cla()
+        ax_cur_velocities.cla()
         bound = bounds[traj]
 
         ax_origin.set_xlim([bound[0][0], bound[1][0]])
@@ -68,9 +75,21 @@ def main(unused_argv):
         ax_pred.set_ylim([bound[0][1], bound[1][1]])
         ax_pred.set_zlim([bound[0][2], bound[1][2]])
 
+        # ax_cur_velocities.set_xlim([bound[0][0], bound[1][0]])
+        # ax_cur_velocities.set_ylim([bound[0][1], bound[1][1]])
+        # ax_cur_velocities.set_zlim([bound[0][2], bound[1][2]])
+
+        ax_cur_positions.set_xlim([bound[0][0], bound[1][0]])
+        ax_cur_positions.set_ylim([bound[0][1], bound[1][1]])
+        ax_cur_positions.set_zlim([bound[0][2], bound[1][2]])
+
 
         pos = torch.squeeze(rollout_data[traj]['pred_pos'], dim=0)[step].to('cpu')
         original_pos = torch.squeeze(rollout_data[traj]['gt_pos'], dim=0)[step].to('cpu')
+
+        cur_positions = torch.squeeze(rollout_data[traj]['cur_positions'], dim=0)[step].to('cpu')
+        cur_velocities = torch.squeeze(rollout_data[traj]['cur_velocities'], dim=0)[step].to('cpu')
+
         faces = torch.squeeze(rollout_data[traj]['faces'], dim=0)[step].to('cpu')
         # ax.plot_trisurf(pos[:, 0], pos[:, 1], faces, pos[:, 2], shade=True)
         # later = torch.cat((faces[:, 2:4], torch.unsqueeze(faces[:, 0], 1)), -1)
@@ -79,6 +98,8 @@ def main(unused_argv):
         # ax.plot_trisurf(pos[:, 0], pos[:, 1], faces, pos[:, 2], shade=True)
         ax_origin.plot_trisurf(original_pos[:, 0], original_pos[:, 1], faces, original_pos[:, 2], shade=True, alpha=0.3)
         ax_pred.plot_trisurf(pos[:, 0], pos[:, 1], faces, pos[:, 2], shade=True, alpha=0.3)
+        # ax_cur_velocities.plot_trisurf(cur_velocities[:, 0], cur_velocities[:, 1], faces, cur_velocities[:, 2], shade=True, alpha=0.3)
+        # ax_cur_positions.plot_trisurf(cur_positions[:, 0], cur_positions[:, 1], faces, cur_positions[:, 2], shade=True, alpha=0.3)
         '''verts = original_pos
         for i in np.arange(len(faces)):
             square = [verts[faces[i, 0]], verts[faces[i, 1]], verts[faces[i, 2]], verts[faces[i, 3]]]
@@ -95,12 +116,14 @@ def main(unused_argv):
         # ax.plot_surface(original_pos[:, 0], original_pos[:, 1], original_pos[:, 2], shade=True, alpha=0.3)
         ax_origin.set_title('ORIGIN Trajectory %d Step %d' % (traj, step))
         ax_pred.set_title('PRED Trajectory %d Step %d' % (traj, step))
+        ax_cur_positions.set_title('CUR_POSITION Trajectory %d Step %d' % (traj, step))
+        ax_cur_velocities.set_title('CUR_VELOCITY Trajectory %d Step %d' % (traj, step))
         return fig,
 
-    anima = animation.FuncAnimation(fig, animate, frames=num_frames * 2, interval=100)
-    writervideo = animation.FFMpegWriter(fps=30)
-    anima.save("ani.mp4", writer=writervideo)
-    # plt.show(block=True)
+    anima = animation.FuncAnimation(fig, animate, frames=num_frames * 10, interval=100)
+    # writervideo = animation.FFMpegWriter(fps=30)
+    # anima.save("ani.mp4", writer=writervideo)
+    plt.show(block=True)
 
 
 if __name__ == '__main__':

@@ -134,7 +134,27 @@ class GraphNetBlock(nn.Module):
         num_nodes = node_features.shape[0]
         features = [node_features]
         for edge_set in edge_sets:
-            if self.attention:
+            if self.attention and self.message_passing_aggregator == 'pna':
+                receiver_features = edge_set.features[edge_set.receivers]
+                sender_features = edge_set.features[edge_set.senders]
+                attention = self.attention_model(torch.cat((sender_features, receiver_features), dim=1),
+                                                 edge_set.receivers)
+                attention = attention.repeat_interleave(
+                    torch.prod(torch.tensor(edge_set.features.shape[1:])).long().to(device))
+                attention = attention.view(edge_set.features.shape[0], *edge_set.features.shape[1:]).to(device)
+                features.append(
+                    self.unsorted_segment_operation(torch.mul(edge_set.features, attention), edge_set.receivers,
+                                                    num_nodes, operation='sum'))
+                features.append(
+                    self.unsorted_segment_operation(torch.mul(edge_set.features, attention), edge_set.receivers,
+                                                    num_nodes, operation='mean'))
+                features.append(
+                    self.unsorted_segment_operation(torch.mul(edge_set.features, attention), edge_set.receivers,
+                                                    num_nodes, operation='max'))
+                features.append(
+                    self.unsorted_segment_operation(torch.mul(edge_set.features, attention), edge_set.receivers,
+                                                    num_nodes, operation='min'))
+            elif self.attention:
                 receiver_features = edge_set.features[edge_set.receivers]
                 sender_features = edge_set.features[edge_set.senders]
                 attention = self.attention_model(torch.cat((sender_features, receiver_features), dim=1),
@@ -145,6 +165,19 @@ class GraphNetBlock(nn.Module):
                 features.append(
                     self.unsorted_segment_operation(torch.mul(edge_set.features, attention), edge_set.receivers,
                                                     num_nodes, operation=self.message_passing_aggregator))
+            elif self.message_passing_aggregator == 'pna':
+                features.append(
+                    self.unsorted_segment_operation(edge_set.features, edge_set.receivers,
+                                                    num_nodes, operation='sum'))
+                features.append(
+                    self.unsorted_segment_operation(edge_set.features, edge_set.receivers,
+                                                    num_nodes, operation='mean'))
+                features.append(
+                    self.unsorted_segment_operation(edge_set.features, edge_set.receivers,
+                                                    num_nodes, operation='max'))
+                features.append(
+                    self.unsorted_segment_operation(edge_set.features, edge_set.receivers,
+                                                    num_nodes, operation='min'))
             else:
                 features.append(
                     self.unsorted_segment_operation(edge_set.features, edge_set.receivers, num_nodes,
@@ -152,7 +185,7 @@ class GraphNetBlock(nn.Module):
         features = torch.cat(features, dim=-1)
         return self.node_model(features)
 
-    def forward(self, graph):
+    def forward(self, graph, mask=None):
         """Applies GraphNetBlock and returns updated MultiGraph."""
         # apply edge functions
         new_edge_sets = []
@@ -165,6 +198,10 @@ class GraphNetBlock(nn.Module):
 
         # add residual connections
         new_node_features += graph.node_features
+        if mask is not None:
+            mask = mask.repeat(new_node_features.shape[-1])
+            mask = mask.view(new_node_features.shape[0], new_node_features.shape[1])
+            new_node_features = torch.where(mask, new_node_features, graph.node_features)
         new_edge_sets = [es._replace(features=es.features + old_es.features)
                          for es, old_es in zip(new_edge_sets, graph.edge_sets)]
         return MultiGraph(new_node_features, new_edge_sets)
@@ -229,7 +266,7 @@ class Processor(nn.Module):
                                                       message_passing_aggregator=message_passing_aggregator,
                                                       attention=attention))
 
-    def forward(self, latent_graph, normalized_adj_mat=None):
+    def forward(self, latent_graph, normalized_adj_mat=None, mask=None):
         if self.stochastic_message_passing_used:
             for graphnet_block in self.graphnet_blocks:
                 latent_graph._replace(node_features=torch.matmul(normalized_adj_mat, latent_graph.node_features))
@@ -237,7 +274,10 @@ class Processor(nn.Module):
             return latent_graph
         else:
             for graphnet_block in self.graphnet_blocks:
-                latent_graph = graphnet_block(latent_graph)
+                if mask is not None:
+                    latent_graph = graphnet_block(latent_graph, mask)
+                else:
+                    latent_graph = graphnet_block(latent_graph)
             return latent_graph
 
 '''
@@ -336,14 +376,17 @@ class EncodeProcessDecode(nn.Module):
             network = nn.Sequential(network, nn.LayerNorm(normalized_shape=widths[-1]))
         return network
 
-    def forward(self, graph, edge_normalizer, is_training, normalized_adj_mat=None, sto_mat=None):
+    def forward(self, graph, edge_normalizer, is_training, normalized_adj_mat=None, sto_mat=None, mask=None):
         """Encodes and processes a multigraph, and returns node features."""
         if self._ripple_used:
             graph = self._ripple_machine.add_meta_edges(graph, edge_normalizer, is_training)
         latent_graph = self.encoder(graph)
         # if self._ripple_used:
         #    latent_graph = self.ripple_connection_generator(latent_graph, graph)
-        latent_graph = self.processor(latent_graph)
+        if mask is not None:
+            latent_graph = self.processor(latent_graph, mask=mask)
+        else:
+            latent_graph = self.processor(latent_graph)
         return self.decoder(latent_graph)
         '''
         stochastic message passing is not necessary

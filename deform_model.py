@@ -87,12 +87,17 @@ class Model(nn.Module):
         """Builds input graph."""
         world_pos = inputs['world_pos']
         node_type = inputs['node_type']
-        one_hot_node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE)
 
+        # mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device))
+        mask = None
+
+        one_hot_node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE).float()
+
+        # node_features = torch.cat((torch.zeros_like(world_pos), one_hot_node_type), dim=-1)
         node_features = one_hot_node_type
 
         cells = inputs['cells']
-        decomposed_cells = common.triangles_to_edges(cells)
+        decomposed_cells = common.triangles_to_edges(cells, deform=True)
         senders, receivers = decomposed_cells['two_way_connectivity']
 
         mesh_pos = inputs['mesh_pos']
@@ -113,29 +118,40 @@ class Model(nn.Module):
             senders=senders)
 
         if self.core_model == encode_process_decode and self._ripple_used == True:
-            return self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training),
+
+            return (self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training),
+                                                     edge_sets=[mesh_edges], target_feature=world_pos,
+                                                     mesh_pos=mesh_pos, model_type=self._model_type), mask)
+            '''
+            return self.core_model.MultiGraphWithPos(node_features=node_features,
                                                      edge_sets=[mesh_edges], target_feature=world_pos,
                                                      mesh_pos=mesh_pos, model_type=self._model_type)
+            '''
         else:
-            return self.core_model.MultiGraph(node_features=self._node_normalizer(node_features, is_training),
-                                              edge_sets=[mesh_edges])
 
+            return (self.core_model.MultiGraph(node_features=self._node_normalizer(node_features, is_training),
+                                              edge_sets=[mesh_edges]), mask)
+            '''
+            return self.core_model.MultiGraph(node_features=node_features,
+                                              edge_sets=[mesh_edges])
+            '''
     def forward(self, inputs, is_training):
-        graph = self._build_graph(inputs, is_training=is_training)
+        graph, mask = self._build_graph(inputs, is_training=is_training)
         if is_training:
-            return self.learned_model(graph, self._edge_normalizer, is_training=is_training)
+            return self.learned_model(graph, self._edge_normalizer, is_training=is_training, mask=mask)
         else:
-            return self._update(inputs, self.learned_model(graph, self._edge_normalizer, is_training=is_training))
+            return self._update(inputs, self.learned_model(graph, self._edge_normalizer, is_training=is_training, mask=mask))
 
     def _update(self, inputs, per_node_network_output):
         """Integrate model outputs."""
-
         velocity = self._output_normalizer.inverse(per_node_network_output)
+        # print(velocity[187])
 
         # integrate forward
         cur_position = inputs['world_pos']
         position = cur_position + velocity
-        return position
+        return (position, cur_position, velocity)
+        # return inputs['world_pos']
 
     def get_output_normalizer(self):
         return self._output_normalizer
