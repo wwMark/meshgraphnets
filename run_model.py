@@ -58,17 +58,17 @@ device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'deform', ['cfd', 'cloth', 'deform'],
+flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
-flags.DEFINE_enum('rollout_split', 'train', ['train', 'test', 'valid'],
+flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
