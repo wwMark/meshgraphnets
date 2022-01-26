@@ -68,7 +68,7 @@ flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', '
 
 flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
+flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
@@ -76,7 +76,7 @@ flags.DEFINE_enum('core_model', 'encode_process_decode',
                    'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
                   'Core model to be used')
 flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 5, 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 1, 'No. of training epochs')
 flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
@@ -530,6 +530,54 @@ def evaluator(params, model, run_step_config):
     loss_record['eval_l1_losses'] = l1_losses
     return loss_record
 
+def n_step_evaluator(params, model, run_step_config, n_step_list, n_traj=1):
+    model_type = run_step_config['model']
+
+    ds_loader = dataset.load_dataset(run_step_config['dataset_dir'], run_step_config['rollout_split'], add_targets=True)
+    ds_iterator = iter(ds_loader)
+
+    n_step_mse_losses = {}
+    n_step_l1_losses = {}
+
+    # Take n_traj trajectories from valid set for n_step loss calculation
+    for i in range(n_traj):
+        trajectory = next(ds_iterator)
+        trajectory = process_trajectory(trajectory, params, model_type, run_step_config['dataset_dir'], True)
+        for n_step in n_step_list:
+            mse_losses = []
+            l1_losses = []
+            for step in range(len(trajectory['world_pos']) - n_step):
+                eval_traj = {}
+                for k, v in trajectory.items():
+                    eval_traj[k] = v[step:step + n_step + 1]
+                _, prediction_trajectory = params['evaluator'].evaluate(model, eval_traj, n_step + 1)
+                mse_loss_fn = torch.nn.MSELoss()
+                l1_loss_fn = torch.nn.L1Loss()
+                if model_type == 'cloth':
+                    mse_loss = mse_loss_fn(torch.squeeze(eval_traj['world_pos'], dim=0), prediction_trajectory['pred_pos'])
+                    l1_loss = l1_loss_fn(torch.squeeze(eval_traj['world_pos'], dim=0), prediction_trajectory['pred_pos'])
+                elif model_type == 'cfd':
+                    mse_loss = mse_loss_fn(torch.squeeze(eval_traj['velocity'], dim=0), prediction_trajectory['pred_velocity'])
+                    l1_loss = l1_loss_fn(torch.squeeze(eval_traj['velocity'], dim=0), prediction_trajectory['pred_velocity'])
+                elif model_type == 'deform':
+                    mse_loss = mse_loss_fn(torch.squeeze(eval_traj['world_pos'], dim=0), prediction_trajectory['pred_pos'])
+                    l1_loss = l1_loss_fn(torch.squeeze(eval_traj['world_pos'], dim=0), prediction_trajectory['pred_pos'])
+                mse_losses.append(mse_loss.cpu())
+                l1_losses.append(l1_loss.cpu())
+            if n_step not in n_step_mse_losses and n_step not in n_step_l1_losses:
+                n_step_mse_losses[n_step] = torch.stack(mse_losses)
+                n_step_l1_losses[n_step] = torch.stack(l1_losses)
+            elif n_step in n_step_mse_losses and n_step in n_step_l1_losses:
+                n_step_mse_losses[n_step] = n_step_mse_losses[n_step] + torch.stack(mse_losses)
+                n_step_l1_losses[n_step] = n_step_l1_losses[n_step] + torch.stack(l1_losses)
+            else:
+                raise Exception('Error when computing n step losses!')
+    for (kmse, vmse), (kl1, vl1) in zip(n_step_mse_losses.items(), n_step_l1_losses.items()):
+        n_step_mse_losses[kmse] = torch.div(vmse, i + 1)
+        n_step_l1_losses[kl1] = torch.div(vl1, i + 1)
+
+    return {'n_step_mse_loss': n_step_mse_losses, 'n_step_l1_loss': n_step_l1_losses}
+
 
 def plot_data(data):
     return None
@@ -761,6 +809,7 @@ def main(argv):
         model.evaluate()
         model.to(device)
         eval_loss_record = evaluator(params, model, run_step_config)
+        step_loss = n_step_evaluator(params, model, run_step_config, n_step_list=[1, 3, 5, 10], n_traj=3)
         if last_run_dir is not None and train_loss_record is None:
             train_loss_record = pickle_load(os.path.join(last_run_step_dir, 'log', 'train_loss.pkl'))
         root_logger.info("Finished evaluating......")
@@ -793,6 +842,12 @@ def main(argv):
         pickle_save(eval_loss_pkl_file, eval_loss_record)
         for item in eval_loss_record.items():
             root_logger.info(item)
+        step_loss_mse_pkl_file = os.path.join(log_dir, 'step_loss_mse.pkl')
+        Path(step_loss_mse_pkl_file).touch()
+        pickle_save(step_loss_mse_pkl_file, step_loss['n_step_mse_loss'])
+        step_loss_l1_pkl_file = os.path.join(log_dir, 'step_loss_l1.pkl')
+        Path(step_loss_l1_pkl_file).touch()
+        pickle_save(step_loss_l1_pkl_file, step_loss['n_step_l1_loss'])
     root_logger.info("---------------------------------------------------------")
 
     # save result in figure
@@ -838,12 +893,6 @@ def main(argv):
         all_trajectory_train_losses_ax.set_xlabel('trajectory no.', fontsize=22)
         all_trajectory_train_losses_ax.set_ylabel('loss', fontsize=22)
 
-        # train_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
-        # train_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
-
-        # all_trajectory_train_losses_ax.xaxis.set_major_locator(ticker.AutoLocator())
-        # all_trajectory_train_losses_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
-
         train_loss_ax.plot(range(1, len(train_loss_record['train_epoch_losses']) + 1),
                            train_loss_record['train_epoch_losses'])
         all_trajectory_train_losses_ax.plot(range(1, len(train_loss_record['all_trajectory_train_losses']) + 1),
@@ -860,18 +909,44 @@ def main(argv):
         eval_l1_loss_ax.set_xlabel('rollout no.', fontsize=22)
         eval_l1_loss_ax.set_ylabel('loss', fontsize=22)
 
-        '''
-        eval_mse_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
-        eval_mse_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
-        eval_l1_loss_ax.xaxis.set_major_locator(ticker.AutoLocator())
-        eval_l1_loss_ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
-        '''
-
         eval_mse_loss_ax.plot(range(1, len(eval_loss_record['eval_mse_losses']) + 1),
                               eval_loss_record['eval_mse_losses'], 'o')
         eval_l1_loss_ax.plot(range(1, len(eval_loss_record['eval_l1_losses']) + 1), eval_loss_record['eval_l1_losses'],
                              'o')
+
+
+        # step loss figure
+
+        fig_step_loss = plt.figure(figsize=(38.4, 21.6), constrained_layout=True)
+        gs_step_loss = fig_step_loss.add_gridspec(1, 2)
+        fig_step_loss.suptitle('Step Loss', fontsize=32)
+
+        step_loss_mse_loss_ax = fig_step_loss.add_subplot(gs_step_loss[0, 0])
+        step_loss_l1_loss_ax = fig_step_loss.add_subplot(gs_step_loss[0, 1])
+
+        step_loss_mse_loss_ax.set_title('Step MSE Loss', fontsize=28)
+        step_loss_mse_loss_ax.set_xlabel('Traj. step', fontsize=22)
+        step_loss_mse_loss_ax.set_ylabel('loss', fontsize=22)
+
+        step_loss_l1_loss_ax.set_title('Step L1 Loss', fontsize=28)
+        step_loss_l1_loss_ax.set_xlabel('Traj. step', fontsize=22)
+        step_loss_l1_loss_ax.set_ylabel('loss', fontsize=22)
+
+        for k, v in step_loss['n_step_mse_loss'].items():
+            label = str(k) + " step prediction"
+            step_loss_mse_loss_ax.plot(range(1, len(v) + 1), v, 'o', label=label)
+        step_loss_mse_loss_ax.legend(fontsize=30)
+        for k, v in step_loss['n_step_l1_loss'].items():
+            label = str(k) + " step prediction"
+            step_loss_l1_loss_ax.plot(range(1, len(v) + 1), v, 'o', label=label)
+        step_loss_l1_loss_ax.legend(fontsize=30)
+
+        fig_step_loss.savefig(os.path.join(log_dir, "Step_Loss.png"))
+
+
+
     fig.savefig(os.path.join(log_dir, "Train_and_Eval_Loss.png"))
+
 
     # save max, min and mean value of train and eval losses as csv
     csv_path = os.path.join(log_dir, 'result.csv')
