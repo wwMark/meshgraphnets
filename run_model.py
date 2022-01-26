@@ -58,13 +58,13 @@ device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'deform'],
+flags.DEFINE_enum('model', 'deform', ['cfd', 'cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
 flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
@@ -98,14 +98,14 @@ ripple_node_connection defines how the selected nodes of each ripple connect wit
     fully_connected: all the selected nodes are connected with each other
     fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
 '''
-flags.DEFINE_boolean('ripple_used', False, 'whether ripple is used or not')
+flags.DEFINE_boolean('ripple_used', True, 'whether ripple is used or not')
 flags.DEFINE_enum('ripple_generation', 'gradient', ['equal_size', 'gradient', 'exponential_size'],
                   'defines how ripples are generated')
-flags.DEFINE_integer('ripple_generation_number', 1,
+flags.DEFINE_integer('ripple_generation_number', 5,
                      'defines how many ripples should be generated in equal size and gradient ripple generation; or the base in exponential size generation')
 flags.DEFINE_enum('ripple_node_selection', 'random', ['random', 'all', 'top'],
                   'defines how the nodes are selected from each ripple')
-flags.DEFINE_integer('ripple_node_selection_random_top_n', 1,
+flags.DEFINE_integer('ripple_node_selection_random_top_n', 3,
                      'defines how many nodes are selected from each ripple if node selection is random or top')
 flags.DEFINE_enum('ripple_node_connection', 'fully_ncross_connected',
                   ['most_influential', 'fully_connected', 'fully_ncross_connected'],
@@ -809,7 +809,7 @@ def main(argv):
         model.evaluate()
         model.to(device)
         eval_loss_record = evaluator(params, model, run_step_config)
-        step_loss = n_step_evaluator(params, model, run_step_config, n_step_list=[1, 3, 5, 10], n_traj=3)
+        step_loss = n_step_evaluator(params, model, run_step_config, n_step_list=[1, 3], n_traj=1)
         if last_run_dir is not None and train_loss_record is None:
             train_loss_record = pickle_load(os.path.join(last_run_step_dir, 'log', 'train_loss.pkl'))
         root_logger.info("Finished evaluating......")

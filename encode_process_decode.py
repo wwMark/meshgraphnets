@@ -126,6 +126,8 @@ class GraphNetBlock(nn.Module):
             result = torch_scatter.scatter_mean(data.float(), segment_ids, dim=0, dim_size=num_segments)
         elif operation == 'min':
             result, _ = torch_scatter.scatter_min(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        else:
+            raise Exception('Invalid operation type!')
         result = result.type(data.dtype)
         return result
 

@@ -34,7 +34,7 @@ class RippleGenerator():
             # bins should be set as small as possible to ensure the nodes inside a bin has the greatest similarity and
             # as big as possible to ensure the similar nodes are assign to same group
             bins = 100
-            take_n_bins = self._ripple_generation_number
+            take_n_bins = self._ripple_generation_number - 1
             velocity_matrix = graph.node_features[:, 0:3]
             norm = torch.linalg.vector_norm(velocity_matrix, dim=1)
             histogram = torch.histc(norm, bins=bins)
@@ -49,6 +49,7 @@ class RippleGenerator():
                 start_index = torch.sum(histogram[:indices[i]]).to(torch.int32)
                 end_index = start_index + values[i]
                 ripple_indices.append((start_index.item(), end_index.to(torch.int32).item()))
+                ripple_indices.sort(key=lambda x: x[0])
             return ripple_indices
         elif self._ripple_generation_method == 'exponential_size':
             base = self._ripple_generation_number
@@ -109,8 +110,9 @@ class RippleNodeConnector():
 
         selected_nodes = []
         for (start_index, end_index), node_mask in zip(ripples, node_selections):
-            ripple = sort_indices[start_index:end_index]
-            selected_nodes.append(ripple[node_mask])
+            if end_index > start_index:
+                ripple = sort_indices[start_index:end_index]
+                selected_nodes.append(ripple[node_mask])
 
         if self._ripple_node_connection == 'most_influential':
             target_feature = graph.target_feature
@@ -191,6 +193,8 @@ class RippleNodeConnector():
             cross_nodes = []
             for ripple_selected_nodes in selected_nodes:
                 # select cross nodes
+                # print(self._ripple_node_ncross)
+                # print(ripple_selected_nodes.shape[0])
                 assert self._ripple_node_ncross <= ripple_selected_nodes.shape[0]
                 mask = torch.randperm(n=len(ripple_selected_nodes))[:self._ripple_node_ncross]
                 for index in ripple_selected_nodes[mask]:

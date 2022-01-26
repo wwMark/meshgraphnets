@@ -11,6 +11,8 @@ import encode_process_decode_max_pooling
 import encode_process_decode_lstm
 import encode_process_decode_graph_structure_watcher
 
+import torch_scatter
+
 device = torch.device('cuda')
 
 
@@ -26,10 +28,11 @@ class Model(nn.Module):
         self._params = params
         self._output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
         self._node_normalizer = normalization.Normalizer(
-            size=common.NodeType.SIZE, name='node_normalizer')
+            size=3 + common.NodeType.SIZE, name='node_normalizer')
         self._edge_normalizer = normalization.Normalizer(
             size=8, name='edge_normalizer')  # 3D coord + 3D coord + 2*length = 7
         self._model_type = params['model'].__name__
+        self._displacement_base = None
 
         # for stochastic message passing
         '''
@@ -83,6 +86,40 @@ class Model(nn.Module):
             'encode_process_decode_lstm': encode_process_decode_lstm,
         }.get(core_model_name, encode_process_decode)
 
+    def unsorted_segment_operation(self, data, segment_ids, num_segments, operation):
+        """
+        Computes the sum along segments of a tensor. Analogous to tf.unsorted_segment_sum.
+
+        :param data: A tensor whose segments are to be summed.
+        :param segment_ids: The segment indices tensor.
+        :param num_segments: The number of segments.
+        :return: A tensor of same data type as the data argument.
+        """
+        assert all([i in data.shape for i in segment_ids.shape]), "segment_ids.shape should be a prefix of data.shape"
+
+        # segment_ids is a 1-D tensor repeat it to have the same shape as data
+        if len(segment_ids.shape) == 1:
+            s = torch.prod(torch.tensor(data.shape[1:])).long().to(device)
+            segment_ids = segment_ids.repeat_interleave(s).view(segment_ids.shape[0], *data.shape[1:]).to(device)
+
+        assert data.shape == segment_ids.shape, "data.shape and segment_ids.shape should be equal"
+
+        shape = [num_segments] + list(data.shape[1:])
+        result = torch.zeros(*shape)
+        if operation == 'sum':
+            result = torch_scatter.scatter_add(data.float(), segment_ids, dim=0, dim_size=num_segments)
+            print(result)
+        elif operation == 'max':
+            result, _ = torch_scatter.scatter_max(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'mean':
+            result = torch_scatter.scatter_mean(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'min':
+            result, _ = torch_scatter.scatter_min(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        else:
+            raise Exception('Invalid operation type!')
+        result = result.type(data.dtype)
+        return result
+
     def _build_graph(self, inputs, is_training):
         """Builds input graph."""
         world_pos = inputs['world_pos']
@@ -92,9 +129,6 @@ class Model(nn.Module):
         mask = None
 
         one_hot_node_type = F.one_hot(node_type[:, 0].to(torch.int64), common.NodeType.SIZE).float()
-
-        # node_features = torch.cat((torch.zeros_like(world_pos), one_hot_node_type), dim=-1)
-        node_features = one_hot_node_type
 
         cells = inputs['cells']
         decomposed_cells = common.triangles_to_edges(cells, deform=True)
@@ -117,24 +151,27 @@ class Model(nn.Module):
             receivers=receivers,
             senders=senders)
 
+        if self._ripple_used:
+            num_nodes = node_type.shape[0]
+            node_dynamic = self.unsorted_segment_operation(torch.abs(relative_world_pos), receivers, num_nodes,
+                                                                operation='sum').to(device)
+            if self._displacement_base is None or self._displacement_base.shape[0] != node_dynamic.shape[0]:
+                self._displacement_base = node_dynamic
+            node_displacement = torch.abs(node_dynamic - self._displacement_base)
+            node_features = torch.cat((node_displacement, one_hot_node_type), dim=-1)
+        else:
+            node_features = one_hot_node_type
+
         if self.core_model == encode_process_decode and self._ripple_used == True:
 
             return (self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training),
                                                      edge_sets=[mesh_edges], target_feature=world_pos,
                                                      mesh_pos=mesh_pos, model_type=self._model_type), mask)
-            '''
-            return self.core_model.MultiGraphWithPos(node_features=node_features,
-                                                     edge_sets=[mesh_edges], target_feature=world_pos,
-                                                     mesh_pos=mesh_pos, model_type=self._model_type)
-            '''
         else:
 
             return (self.core_model.MultiGraph(node_features=self._node_normalizer(node_features, is_training),
                                               edge_sets=[mesh_edges]), mask)
-            '''
-            return self.core_model.MultiGraph(node_features=node_features,
-                                              edge_sets=[mesh_edges])
-            '''
+
     def forward(self, inputs, is_training):
         graph, mask = self._build_graph(inputs, is_training=is_training)
         if is_training:
