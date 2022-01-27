@@ -271,7 +271,7 @@ class Processor(nn.Module):
     def forward(self, latent_graph, normalized_adj_mat=None, mask=None):
         if self.stochastic_message_passing_used:
             for graphnet_block in self.graphnet_blocks:
-                latent_graph._replace(node_features=torch.matmul(normalized_adj_mat, latent_graph.node_features))
+                latent_graph = latent_graph._replace(node_features=torch.matmul(normalized_adj_mat, latent_graph.node_features))
                 latent_graph = graphnet_block(latent_graph)
             return latent_graph
         else:

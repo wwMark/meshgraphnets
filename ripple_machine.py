@@ -1,5 +1,6 @@
 import torch
 import collections
+import find_influential_nodes
 
 device = torch.device('cuda')
 
@@ -146,9 +147,9 @@ class RippleNodeConnector():
             edge_features = edge_normalizer(edge_features, is_training)
 
             mesh_edges = graph.edge_sets[0]
-            mesh_edges._replace(features=torch.cat((mesh_edges.features, edge_features), dim=0))
-            mesh_edges._replace(senders=torch.cat((mesh_edges.senders, senders), dim=0))
-            mesh_edges._replace(receivers=torch.cat((mesh_edges.receivers, receivers), dim=0))
+            mesh_edges = mesh_edges._replace(features=torch.cat((mesh_edges.features, edge_features), dim=0))
+            mesh_edges = mesh_edges._replace(senders=torch.cat((mesh_edges.senders, senders), dim=0))
+            mesh_edges = mesh_edges._replace(receivers=torch.cat((mesh_edges.receivers, receivers), dim=0))
             new_graph = MultiGraph(node_features=graph.node_features, edge_sets=[mesh_edges])
 
         elif self._ripple_node_connection == 'fully_connected':
@@ -182,9 +183,9 @@ class RippleNodeConnector():
                 edge_features = edge_normalizer(edge_features, is_training)
 
                 mesh_edges = graph.edge_sets[0]
-                mesh_edges._replace(features=torch.cat((mesh_edges.features, edge_features), dim=0))
-                mesh_edges._replace(senders=torch.cat((mesh_edges.senders, senders), dim=0))
-                mesh_edges._replace(features=torch.cat((mesh_edges.receivers, receivers), dim=0))
+                mesh_edges = mesh_edges._replace(features=torch.cat((mesh_edges.features, edge_features), dim=0))
+                mesh_edges = mesh_edges._replace(senders=torch.cat((mesh_edges.senders, senders), dim=0))
+                mesh_edges = mesh_edges._replace(receivers=torch.cat((mesh_edges.receivers, receivers), dim=0))
                 new_graph = MultiGraph(node_features=graph.node_features, edge_sets=[mesh_edges])
 
         elif self._ripple_node_connection == 'fully_ncross_connected':
@@ -227,9 +228,9 @@ class RippleNodeConnector():
                 edge_features = edge_normalizer(edge_features, is_training)
 
                 mesh_edges = graph.edge_sets[0]
-                mesh_edges._replace(features=torch.cat((mesh_edges.features, edge_features), dim=0))
-                mesh_edges._replace(senders=torch.cat((mesh_edges.senders, senders), dim=0))
-                mesh_edges._replace(features=torch.cat((mesh_edges.receivers, receivers), dim=0))
+                mesh_edges = mesh_edges._replace(features=torch.cat((mesh_edges.features, edge_features), dim=0))
+                mesh_edges = mesh_edges._replace(senders=torch.cat((mesh_edges.senders, senders), dim=0))
+                mesh_edges = mesh_edges._replace(receivers=torch.cat((mesh_edges.receivers, receivers), dim=0))
                 new_graph = MultiGraph(node_features=graph.node_features, edge_sets=[mesh_edges])
 
             # fully connect cross nodes
@@ -260,26 +261,66 @@ class RippleNodeConnector():
             edge_features = edge_normalizer(edge_features, is_training)
 
             mesh_edges = graph.edge_sets[0]
-            mesh_edges._replace(features=torch.cat((mesh_edges.features, edge_features), dim=0))
-            mesh_edges._replace(senders=torch.cat((mesh_edges.senders, senders), dim=0))
-            mesh_edges._replace(features=torch.cat((mesh_edges.receivers, receivers), dim=0))
+            mesh_edges = mesh_edges._replace(features=torch.cat((mesh_edges.features, edge_features), dim=0))
+            mesh_edges = mesh_edges._replace(senders=torch.cat((mesh_edges.senders, senders), dim=0))
+            mesh_edges = mesh_edges._replace(receivers=torch.cat((mesh_edges.receivers, receivers), dim=0))
             new_graph = MultiGraph(node_features=graph.node_features, edge_sets=[mesh_edges])
-        return graph
+        return new_graph
 
 
 # class that aggregates ripple generator, ripple node selector and ripple node connector
 class RippleMachine():
     def __init__(self, ripple_generation, ripple_generation_number, ripple_node_selection,
                  ripple_node_selection_random_top_n, ripple_node_connection, ripple_node_ncross):
-        self._ripple_generator = RippleGenerator(ripple_generation, ripple_generation_number)
-        self._ripple_node_selector = RippleNodeSelector(ripple_node_selection, ripple_node_selection_random_top_n)
-        self._ripple_node_connector = RippleNodeConnector(ripple_node_connection, ripple_node_ncross)
+        self._ripple_generation = ripple_generation
+        self._ripple_generation_number = ripple_generation_number
+        self._radius = 0.01
+        self._topk = 10
+        if self._ripple_generation != 'random_nodes' and self._ripple_generation != 'distance_density':
+            self._ripple_generator = RippleGenerator(ripple_generation, ripple_generation_number)
+            self._ripple_node_selector = RippleNodeSelector(ripple_node_selection, ripple_node_selection_random_top_n)
+            self._ripple_node_connector = RippleNodeConnector(ripple_node_connection, ripple_node_ncross)
 
     def add_meta_edges(self, graph, edge_normalizer, is_training):
-        ripple_indices = self._ripple_generator.generate_ripple(graph)
-        selected_nodes = self._ripple_node_selector.select_nodes(ripple_indices)
-        graph = self._ripple_node_connector.connect(graph, ripple_indices, selected_nodes, edge_normalizer, is_training)
-        return graph
+        if self._ripple_generation == 'random_nodes' or self._ripple_generation == 'distance_density':
+            target_feature = graph.target_feature
+            mesh_pos = graph.mesh_pos
+            if self._ripple_generation == 'random_nodes':
+                selected_nodes = torch.randperm(n=target_feature.shape[0])[0:self._ripple_generation_number]
+            if self._ripple_generation == 'distance_density':
+                selected_nodes = find_influential_nodes.find_influential_nodes(graph.target_feature, self._radius, self._topk)
+            receivers_list = selected_nodes
+            senders_list = selected_nodes
+            senders = torch.cat(
+                (torch.tensor(senders_list, device=device), torch.tensor(receivers_list, device=device)), dim=0)
+            receivers = torch.cat(
+                (torch.tensor(receivers_list, device=device), torch.tensor(senders_list, device=device)), dim=0)
+
+            model_type = graph.model_type
+            if model_type == 'cloth_model' or model_type == 'deform_model':
+                relative_target_feature = (torch.index_select(input=target_feature, dim=0, index=senders) -
+                                           torch.index_select(input=target_feature, dim=0, index=receivers))
+                relative_mesh_pos = (torch.index_select(mesh_pos, 0, senders) -
+                                     torch.index_select(mesh_pos, 0, receivers))
+                edge_features = torch.cat((
+                    relative_target_feature,
+                    torch.norm(relative_target_feature, dim=-1, keepdim=True),
+                    relative_mesh_pos,
+                    torch.norm(relative_mesh_pos, dim=-1, keepdim=True)), dim=-1)
+            else:
+                raise Exception("Model type is not specified in RippleNodeConnector.")
+            edge_features = edge_normalizer(edge_features, is_training)
+
+            mesh_edges = graph.edge_sets[0]
+            mesh_edges = mesh_edges._replace(features=torch.cat((mesh_edges.features, edge_features), dim=0))
+            mesh_edges = mesh_edges._replace(senders=torch.cat((mesh_edges.senders, senders), dim=0))
+            mesh_edges = mesh_edges._replace(receivers=torch.cat((mesh_edges.receivers, receivers), dim=0))
+            new_graph = MultiGraph(node_features=graph.node_features, edge_sets=[mesh_edges])
+        else:
+            ripple_indices = self._ripple_generator.generate_ripple(graph)
+            selected_nodes = self._ripple_node_selector.select_nodes(ripple_indices)
+            new_graph = self._ripple_node_connector.connect(graph, ripple_indices, selected_nodes, edge_normalizer, is_training)
+        return new_graph
 
 '''
 class RippleConnectionGenerator(nn.Module):

@@ -108,7 +108,6 @@ class Model(nn.Module):
         result = torch.zeros(*shape)
         if operation == 'sum':
             result = torch_scatter.scatter_add(data.float(), segment_ids, dim=0, dim_size=num_segments)
-            print(result)
         elif operation == 'max':
             result, _ = torch_scatter.scatter_max(data.float(), segment_ids, dim=0, dim_size=num_segments)
         elif operation == 'mean':
@@ -160,15 +159,13 @@ class Model(nn.Module):
             node_displacement = torch.abs(node_dynamic - self._displacement_base)
             node_features = torch.cat((node_displacement, one_hot_node_type), dim=-1)
         else:
-            node_features = one_hot_node_type
+            node_features = torch.cat((torch.zeros_like(world_pos), one_hot_node_type), dim=-1)
 
         if self.core_model == encode_process_decode and self._ripple_used == True:
-
             return (self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training),
                                                      edge_sets=[mesh_edges], target_feature=world_pos,
                                                      mesh_pos=mesh_pos, model_type=self._model_type), mask)
         else:
-
             return (self.core_model.MultiGraph(node_features=self._node_normalizer(node_features, is_training),
                                               edge_sets=[mesh_edges]), mask)
 

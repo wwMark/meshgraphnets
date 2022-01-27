@@ -99,7 +99,7 @@ ripple_node_connection defines how the selected nodes of each ripple connect wit
     fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
 '''
 flags.DEFINE_boolean('ripple_used', True, 'whether ripple is used or not')
-flags.DEFINE_enum('ripple_generation', 'gradient', ['equal_size', 'gradient', 'exponential_size'],
+flags.DEFINE_enum('ripple_generation', 'distance_density', ['equal_size', 'gradient', 'exponential_size', 'random_nodes', 'distance_density'],
                   'defines how ripples are generated')
 flags.DEFINE_integer('ripple_generation_number', 5,
                      'defines how many ripples should be generated in equal size and gradient ripple generation; or the base in exponential size generation')
@@ -851,102 +851,111 @@ def main(argv):
     root_logger.info("---------------------------------------------------------")
 
     # save result in figure
-    fig = plt.figure(figsize=(38.4, 21.6), constrained_layout=True)
-    gs = fig.add_gridspec(4, 3)
-    fig.suptitle('Train and Evaluation Losses', fontsize=32)
+    fig_train = plt.figure(figsize=(38.4, 21.6), constrained_layout=True)
+    fig_eval = plt.figure(figsize=(38.4, 21.6), constrained_layout=True)
+    gs_train = fig_train.add_gridspec(2, 1)
+    gs_eval = fig_eval.add_gridspec(1, 2)
     description = []
-    description.append("Simulation model is " + str(FLAGS.model) + "\n")
-    description.append("Finished FLAGS.mode " + FLAGS.mode + "\n")
+    delimiter = ", "
+    description.append("Simulation model is " + str(FLAGS.model) + delimiter)
+    description.append("Finished FLAGS.mode " + FLAGS.mode + delimiter)
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
-        description.append("Evaluation set is " + FLAGS.rollout_split + "\n")
+        description.append("Evaluation set is " + FLAGS.rollout_split + delimiter)
     elif FLAGS.mode == 'train':
-        description.append("No Evaluation" + "\n")
-    description.append("Core model is " + FLAGS.core_model + "\n")
-    description.append("Message passing aggregator is " + FLAGS.message_passing_aggregator + "\n")
-    description.append("Message passing steps are " + str(FLAGS.message_passing_steps) + "\n")
-    description.append("Attention used is " + str(FLAGS.attention) + "\n")
-    description.append("Ripple used is " + str(FLAGS.ripple_used) + "\n")
+        description.append("No Evaluation" + delimiter)
+    description.append("Core model is " + FLAGS.core_model + delimiter)
+    description.append("Message passing aggregator is " + FLAGS.message_passing_aggregator + delimiter)
+    description.append("Message passing steps are " + str(FLAGS.message_passing_steps) + delimiter)
+    description.append("Attention used is " + str(FLAGS.attention) + delimiter)
+    description.append("Ripple used is " + str(FLAGS.ripple_used) + delimiter)
     if FLAGS.ripple_used:
-        description.append("    Ripple generation method is " + str(FLAGS.ripple_generation) + "\n")
-        description.append("    Ripple generation number is " + str(FLAGS.ripple_generation_number) + "\n")
-        description.append("    Ripple node selection method is " + str(FLAGS.ripple_node_selection) + "\n")
+        description.append("    Ripple generation method is " + str(FLAGS.ripple_generation) + delimiter)
+        description.append("    Ripple generation number is " + str(FLAGS.ripple_generation_number) + delimiter)
+        description.append("    Ripple node selection method is " + str(FLAGS.ripple_node_selection) + delimiter)
         description.append(
-            "    Ripple node selection number is " + str(FLAGS.ripple_node_selection_random_top_n) + "\n")
-        description.append("    Ripple node connection method is " + str(FLAGS.ripple_node_connection) + "\n")
-        description.append("    Ripple node ncross number is " + str(FLAGS.ripple_node_ncross) + "\n")
-    description.append("Elapsed time " + elapsed_time + "\n")
+            "    Ripple node selection number is " + str(FLAGS.ripple_node_selection_random_top_n) + delimiter)
+        description.append("    Ripple node connection method is " + str(FLAGS.ripple_node_connection) + delimiter)
+        description.append("    Ripple node ncross number is " + str(FLAGS.ripple_node_ncross) + delimiter)
+    description.append("Elapsed time " + elapsed_time + delimiter)
     if FLAGS.mode == 'train' or FLAGS.mode == 'all':
-        description.append("Train mean elapsed time " + train_mean_elapsed_time + "\n")
+        description.append("Train mean elapsed time " + train_mean_elapsed_time + delimiter)
     description_txt = ""
     for item in description:
         description_txt += item
-    plt.figtext(0.5, 0.01, description_txt, wrap=True, horizontalalignment='left', fontsize=22)
+    # plt.figtext(0.5, 0.01, description_txt, wrap=True, horizontalalignment='left', fontsize=22)
     if FLAGS.mode == 'train' or FLAGS.mode == 'all':
-        train_loss_ax = fig.add_subplot(gs[0, 0])
-        all_trajectory_train_losses_ax = fig.add_subplot(gs[1:3, 0:])
+        train_loss_ax = fig_train.add_subplot(gs_train[0, 0])
+        all_trajectory_train_losses_ax = fig_train.add_subplot(gs_train[1, 0])
 
-        train_loss_ax.set_title('Train Loss', fontsize=28)
-        train_loss_ax.set_xlabel('epoch', fontsize=22)
-        train_loss_ax.set_ylabel('loss', fontsize=22)
+        train_loss_ax.set_title('Train Loss', fontsize=68)
+        train_loss_ax.set_xlabel('Epoch', fontsize=50)
+        train_loss_ax.set_ylabel('Loss', fontsize=50)
+        train_loss_ax.tick_params(axis='both', labelsize=34)
+        train_loss_ax.yaxis.get_offset_text().set_fontsize(34)
 
-        all_trajectory_train_losses_ax.set_title('Train trajectory Loss', fontsize=28)
-        all_trajectory_train_losses_ax.set_xlabel('trajectory no.', fontsize=22)
-        all_trajectory_train_losses_ax.set_ylabel('loss', fontsize=22)
+        all_trajectory_train_losses_ax.set_title('Train trajectory Loss', fontsize=68)
+        all_trajectory_train_losses_ax.set_xlabel('Trajectory No.', fontsize=50)
+        all_trajectory_train_losses_ax.set_ylabel('Loss', fontsize=50)
+        all_trajectory_train_losses_ax.tick_params(axis='both', labelsize=34)
+        all_trajectory_train_losses_ax.yaxis.get_offset_text().set_fontsize(34)
 
         train_loss_ax.plot(range(1, len(train_loss_record['train_epoch_losses']) + 1),
                            train_loss_record['train_epoch_losses'])
         all_trajectory_train_losses_ax.plot(range(1, len(train_loss_record['all_trajectory_train_losses']) + 1),
                                             train_loss_record['all_trajectory_train_losses'])
+        fig_train.savefig(os.path.join(log_dir, "Train_Loss.png"))
     if FLAGS.mode == 'eval' or FLAGS.mode == 'all':
-        eval_mse_loss_ax = fig.add_subplot(gs[0, 1])
-        eval_l1_loss_ax = fig.add_subplot(gs[0, 2])
+        eval_mse_loss_ax = fig_eval.add_subplot(gs_eval[0, 0])
+        eval_l1_loss_ax = fig_eval.add_subplot(gs_eval[0, 1])
 
-        eval_mse_loss_ax.set_title('Eval MSE Loss', fontsize=28)
-        eval_mse_loss_ax.set_xlabel('rollout no.', fontsize=22)
-        eval_mse_loss_ax.set_ylabel('loss', fontsize=22)
+        eval_mse_loss_ax.set_title('Eval MSE Loss', fontsize=68)
+        eval_mse_loss_ax.set_xlabel('Rollout No.', fontsize=50)
+        eval_mse_loss_ax.set_ylabel('Loss', fontsize=50)
+        eval_mse_loss_ax.tick_params(axis='both', labelsize=34)
+        eval_mse_loss_ax.yaxis.get_offset_text().set_fontsize(34)
 
-        eval_l1_loss_ax.set_title('Eval L1 Loss', fontsize=28)
-        eval_l1_loss_ax.set_xlabel('rollout no.', fontsize=22)
-        eval_l1_loss_ax.set_ylabel('loss', fontsize=22)
+        eval_l1_loss_ax.set_title('Eval L1 Loss', fontsize=68)
+        eval_l1_loss_ax.set_xlabel('Rollout No.', fontsize=50)
+        eval_l1_loss_ax.set_ylabel('Loss', fontsize=50)
+        eval_l1_loss_ax.tick_params(axis='both', labelsize=34)
+        eval_l1_loss_ax.yaxis.get_offset_text().set_fontsize(34)
 
         eval_mse_loss_ax.plot(range(1, len(eval_loss_record['eval_mse_losses']) + 1),
                               eval_loss_record['eval_mse_losses'], 'o')
         eval_l1_loss_ax.plot(range(1, len(eval_loss_record['eval_l1_losses']) + 1), eval_loss_record['eval_l1_losses'],
                              'o')
-
+        fig_eval.savefig(os.path.join(log_dir, "Eval_Loss.png"))
 
         # step loss figure
 
         fig_step_loss = plt.figure(figsize=(38.4, 21.6), constrained_layout=True)
         gs_step_loss = fig_step_loss.add_gridspec(1, 2)
-        fig_step_loss.suptitle('Step Loss', fontsize=32)
 
         step_loss_mse_loss_ax = fig_step_loss.add_subplot(gs_step_loss[0, 0])
         step_loss_l1_loss_ax = fig_step_loss.add_subplot(gs_step_loss[0, 1])
 
-        step_loss_mse_loss_ax.set_title('Step MSE Loss', fontsize=28)
-        step_loss_mse_loss_ax.set_xlabel('Traj. step', fontsize=22)
-        step_loss_mse_loss_ax.set_ylabel('loss', fontsize=22)
+        step_loss_mse_loss_ax.set_title('Step MSE Loss', fontsize=68)
+        step_loss_mse_loss_ax.set_xlabel('Trajectory Step', fontsize=50)
+        step_loss_mse_loss_ax.set_ylabel('Loss', fontsize=50)
+        step_loss_mse_loss_ax.tick_params(axis='both', labelsize=34)
+        step_loss_mse_loss_ax.yaxis.get_offset_text().set_fontsize(34)
 
-        step_loss_l1_loss_ax.set_title('Step L1 Loss', fontsize=28)
-        step_loss_l1_loss_ax.set_xlabel('Traj. step', fontsize=22)
-        step_loss_l1_loss_ax.set_ylabel('loss', fontsize=22)
+        step_loss_l1_loss_ax.set_title('Step L1 Loss', fontsize=68)
+        step_loss_l1_loss_ax.set_xlabel('Trajectory Step', fontsize=50)
+        step_loss_l1_loss_ax.set_ylabel('Loss', fontsize=50)
+        step_loss_l1_loss_ax.tick_params(axis='both', labelsize=34)
+        step_loss_l1_loss_ax.yaxis.get_offset_text().set_fontsize(34)
 
         for k, v in step_loss['n_step_mse_loss'].items():
             label = str(k) + " step prediction"
             step_loss_mse_loss_ax.plot(range(1, len(v) + 1), v, 'o', label=label)
-        step_loss_mse_loss_ax.legend(fontsize=30)
+        step_loss_mse_loss_ax.legend(fontsize=40)
         for k, v in step_loss['n_step_l1_loss'].items():
             label = str(k) + " step prediction"
             step_loss_l1_loss_ax.plot(range(1, len(v) + 1), v, 'o', label=label)
-        step_loss_l1_loss_ax.legend(fontsize=30)
+        step_loss_l1_loss_ax.legend(fontsize=40)
 
-        fig_step_loss.savefig(os.path.join(log_dir, "Step_Loss.png"))
-
-
-
-    fig.savefig(os.path.join(log_dir, "Train_and_Eval_Loss.png"))
-
+        fig_step_loss.savefig(os.path.join(log_dir, "Eval_Step_Loss.png"))
 
     # save max, min and mean value of train and eval losses as csv
     csv_path = os.path.join(log_dir, 'result.csv')
