@@ -30,10 +30,12 @@ class RippleGenerator():
                 end_index = (i + 1) * ripple_size
                 ripple_indices.append((start_index, end_index))
             ripple_indices.append(((ripple_number - 1) * ripple_size, ripple_number * ripple_size + ripple_size_rest))
-            return ripple_indices
+            return (ripple_indices, None)
         elif self._ripple_generation_method == 'gradient':
             # bins should be set as small as possible to ensure the nodes inside a bin has the greatest similarity and
             # as big as possible to ensure the similar nodes are assign to same group
+            target_feature_matrix = graph.target_feature
+            num_nodes = target_feature_matrix.shape[0]
             bins = 100
             take_n_bins = self._ripple_generation_number - 1
             velocity_matrix = graph.node_features[:, 0:3]
@@ -51,7 +53,13 @@ class RippleGenerator():
                 end_index = start_index + values[i]
                 ripple_indices.append((start_index.item(), end_index.to(torch.int32).item()))
                 ripple_indices.sort(key=lambda x: x[0])
-            return ripple_indices
+            selected_nodes_concat = []
+            for start_index, end_index in ripple_indices:
+                selected_nodes = list(range(start_index, end_index))
+                selected_nodes_concat.extend(selected_nodes)
+            rest_nodes = list(range(0, num_nodes))
+            rest_nodes = set(rest_nodes) - set(selected_nodes_concat)
+            return (ripple_indices, rest_nodes)
         elif self._ripple_generation_method == 'exponential_size':
             base = self._ripple_generation_number
             exponential = 1
@@ -63,7 +71,7 @@ class RippleGenerator():
                 if end_index >= num_nodes:
                     end_index = num_nodes
                     ripple_indices.append((start_index, end_index))
-                    return ripple_indices
+                    return (ripple_indices, None)
                 ripple_indices.append((start_index, end_index))
                 exponential += 1
                 start_index = end_index
@@ -77,32 +85,46 @@ class RippleNodeSelector():
         self._ripple_node_selection = ripple_node_selection
         self._ripple_node_selection_random_top_n = ripple_node_selection_random_top_n
 
-    def select_nodes(self, ripple_list):
+    def select_nodes(self, ripple_tuple):
         selected_nodes = []
+        ripple_list = ripple_tuple[0]
+        ripple_rest = ripple_tuple[1]
         if self._ripple_node_selection == 'random':
             for ripple in ripple_list:
                 ripple_size = ripple[1] - ripple[0]
                 ripple_select_size = self._ripple_node_selection_random_top_n if self._ripple_node_selection_random_top_n <= ripple_size else ripple_size
                 random_select_mask = torch.randperm(n=ripple_size)[0:ripple_select_size]
                 selected_nodes.append(random_select_mask)
+            if ripple_rest is not None:
+                ripple_size = len(ripple_rest)
+                ripple_select_size = self._ripple_node_selection_random_top_n if self._ripple_node_selection_random_top_n <= ripple_size else ripple_size
+                random_select_mask = torch.randperm(n=ripple_size)[0:ripple_select_size]
+                selected_nodes.append(random_select_mask)
         elif self._ripple_node_selection == 'top':
             for ripple in ripple_list:
                 ripple_size = ripple[1] - ripple[0]
-                selected_nodes.append(range(ripple_size)[:self._ripple_node_selection_random_top_n])
+                ripple_select_size = self._ripple_node_selection_random_top_n if self._ripple_node_selection_random_top_n <= ripple_size else ripple_size
+                selected_nodes.append(range(ripple_size)[:ripple_select_size])
+            if ripple_rest is not None:
+                ripple_size = len(ripple_rest)
+                ripple_select_size = self._ripple_node_selection_random_top_n if self._ripple_node_selection_random_top_n <= ripple_size else ripple_size
+                selected_nodes.append(range(ripple_size)[:ripple_select_size])
         elif self._ripple_node_selection == 'all':
             for ripple in ripple_list:
                 ripple_size = ripple[1] - ripple[0]
+                selected_nodes.append(range(ripple_size))
+            if ripple_rest is not None:
+                ripple_size = len(ripple_rest)
                 selected_nodes.append(range(ripple_size))
         return selected_nodes
 
 # connect the selected nodes
 class RippleNodeConnector():
-
     def __init__(self, ripple_node_connection, ripple_node_ncross):
         self._ripple_node_connection = ripple_node_connection
         self._ripple_node_ncross = ripple_node_ncross
 
-    def connect(self, graph, ripples, node_selections, edge_normalizer, is_training):
+    def connect(self, graph, ripple_tuple, node_selections, edge_normalizer, is_training):
         model_type = graph.model_type
         velocity_matrix = graph.node_features[:, 0:3]
 
@@ -110,10 +132,15 @@ class RippleNodeConnector():
         _, sort_indices = torch.sort(velocity_norm, dim=0, descending=True)
 
         selected_nodes = []
+        ripples = ripple_tuple[0]
+        ripple_rest = ripple_tuple[1]
         for (start_index, end_index), node_mask in zip(ripples, node_selections):
             if end_index > start_index:
                 ripple = sort_indices[start_index:end_index]
                 selected_nodes.append(ripple[node_mask])
+        if ripple_rest is not None:
+            ripple = sort_indices[ripple_rest]
+            selected_nodes.append(ripple[node_selections[-1]])
 
         if self._ripple_node_connection == 'most_influential':
             target_feature = graph.target_feature

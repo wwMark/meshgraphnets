@@ -99,7 +99,7 @@ ripple_node_connection defines how the selected nodes of each ripple connect wit
     fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
 '''
 flags.DEFINE_boolean('ripple_used', True, 'whether ripple is used or not')
-flags.DEFINE_enum('ripple_generation', 'distance_density', ['equal_size', 'gradient', 'exponential_size', 'random_nodes', 'distance_density'],
+flags.DEFINE_enum('ripple_generation', 'gradient', ['equal_size', 'gradient', 'exponential_size', 'random_nodes', 'distance_density'],
                   'defines how ripples are generated')
 flags.DEFINE_integer('ripple_generation_number', 5,
                      'defines how many ripples should be generated in equal size and gradient ripple generation; or the base in exponential size generation')
