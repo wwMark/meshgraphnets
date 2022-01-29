@@ -139,7 +139,7 @@ class RippleNodeConnector():
                 ripple = sort_indices[start_index:end_index]
                 selected_nodes.append(ripple[node_mask])
         if ripple_rest is not None:
-            ripple = sort_indices[ripple_rest]
+            ripple = sort_indices[list(ripple_rest)]
             selected_nodes.append(ripple[node_selections[-1]])
 
         if self._ripple_node_connection == 'most_influential':
@@ -223,7 +223,6 @@ class RippleNodeConnector():
                 # select cross nodes
                 # print(self._ripple_node_ncross)
                 # print(ripple_selected_nodes.shape[0])
-                assert self._ripple_node_ncross <= ripple_selected_nodes.shape[0]
                 mask = torch.randperm(n=len(ripple_selected_nodes))[:self._ripple_node_ncross]
                 for index in ripple_selected_nodes[mask]:
                     cross_nodes.append(index)
