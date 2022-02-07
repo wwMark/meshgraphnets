@@ -26,15 +26,18 @@ latest_subdir = max(all_subdirs, key=os.path.getmtime)
 rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('rollout_path', 'E:\\meshgraphnets\\output\\deforming_plate\\Tue-Jan-25-17-50-18-2022\\1\\rollout\\rollout.pkl', 'Path to rollout pickle file')
+# flags.DEFINE_string('rollout_path', 'E:\\meshgraphnets\\output\\deforming_plate\\Tue-Jan-25-17-50-18-2022\\1\\rollout\\rollout.pkl', 'Path to rollout pickle file')
 # flags.DEFINE_string('rollout_path', '/home/i53/student/ruoheng_ma/meshgraphnets/output/deforming_plate/Mon-Jan--3-17-04-22-2022/1/rollout/rollout.pkl', 'Path to rollout pickle file')
 # flags.DEFINE_string('rollout_path', rollout_path, 'Path to rollout pickle file')
 
 
 def main(unused_argv):
-    path_prefix = 'E:\\meshgraphnets\\output\\deforming_plate\\'
-    path_suffix = 'rollout\\rollout.pkl'
-    rollout_paths = ['Tue-Jan-25-17-50-18-2022\\1', 'Fri-Jan-28-13-53-24-2022\\1']
+    # path_prefix = 'E:\\meshgraphnets\\output\\deforming_plate\\'
+    # path_suffix = 'rollout\\rollout.pkl'
+    # rollout_paths = ['Mon-Jan-31-05-04-38-2022\\1', 'Fri-Jan-28-13-53-24-2022\\1']
+    path_prefix = '/home/kit/anthropomatik/sn2444/meshgraphnets/output/deforming_plate/'
+    path_suffix = 'rollout/rollout.pkl'
+    rollout_paths = ['Mon-Jan-31-05-04-38-2022/2', 'Mon-Jan-31-05-10-30-2022/2', 'Mon-Jan-31-05-20-38-2022/2', 'Mon-Jan-31-05-35-42-2022/2', 'Mon-Jan-31-05-39-05-2022/2', 'Mon-Jan-31-08-28-21-2022/2']
     for rollout_path in rollout_paths:
         save_path = os.path.join(path_prefix, rollout_path)
         data_path = os.path.join(path_prefix, rollout_path, path_suffix)
@@ -66,7 +69,7 @@ def main(unused_argv):
         def animate(num):
             # step = (num * skip) % num_steps
             # traj = 0
-            skip = 1
+            skip = 10
             traj = (num * skip) // num_steps
             step = (num * skip) % num_steps
             ax_origin.cla()
@@ -124,11 +127,11 @@ def main(unused_argv):
             # ax.plot_surface(original_pos[:, 0], original_pos[:, 1], original_pos[:, 2], shade=True, alpha=0.3)
             ax_origin.set_title('ORIGIN Trajectory %d Step %d' % (traj, step))
             ax_pred.set_title('PRED Trajectory %d Step %d' % (traj, step))
-            ax_cur_positions.set_title('CUR_POSITION Trajectory %d Step %d' % (traj, step))
-            ax_cur_velocities.set_title('CUR_VELOCITY Trajectory %d Step %d' % (traj, step))
+            # ax_cur_positions.set_title('CUR_POSITION Trajectory %d Step %d' % (traj, step))
+            # ax_cur_velocities.set_title('CUR_VELOCITY Trajectory %d Step %d' % (traj, step))
             return fig,
 
-        anima = animation.FuncAnimation(fig, animate, frames=math.floor(num_frames * 0.1), interval=100)
+        anima = animation.FuncAnimation(fig, animate, frames=math.floor(num_frames * 0.1 * 5), interval=100)
         writervideo = animation.FFMpegWriter(fps=30)
         anima.save(os.path.join(save_path, 'ani.mp4'), writer=writervideo)
         # plt.show(block=True)

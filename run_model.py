@@ -124,7 +124,7 @@ flags.DEFINE_string('model_last_run_dir',
 flags.DEFINE_boolean('use_prev_config', True, 'Decide whether to use the configuration from last run step')
 
 # hpc max run time setting
-flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 2, 'Max run time on hpc')
+flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 4, 'Max run time on hpc')
 # flags.DEFINE_integer('hpc_default_max_time', 1500, 'Max run time on hpc')
 
 PARAMETERS = {
@@ -809,7 +809,7 @@ def main(argv):
         model.evaluate()
         model.to(device)
         eval_loss_record = evaluator(params, model, run_step_config)
-        step_loss = n_step_evaluator(params, model, run_step_config, n_step_list=[1, 3], n_traj=1)
+        step_loss = n_step_evaluator(params, model, run_step_config, n_step_list=[1, 3, 5, 7, 10], n_traj=5)
         if last_run_dir is not None and train_loss_record is None:
             train_loss_record = pickle_load(os.path.join(last_run_step_dir, 'log', 'train_loss.pkl'))
         root_logger.info("Finished evaluating......")
