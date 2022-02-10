@@ -20,13 +20,13 @@ def _rollout(model, initial_state, num_steps, target_world_pos):
     def step_fn(cur_pos, trajectory, cur_positions, cur_velocities, target_world_pos):
         # memory_prev = torch.cuda.memory_allocated(device) / (1024 * 1024)
         with torch.no_grad():
-            prediction, cur_position, cur_velocity = model({**initial_state, 'world_pos': cur_pos}, is_training=False)
+            prediction, cur_position, cur_velocity = model({**initial_state, 'world_pos': cur_pos, 'target|world_pos': target_world_pos}, is_training=False)
 
         # next_pos = torch.where(mask, torch.squeeze(prediction), torch.squeeze(cur_pos))
         next_pos = prediction
-        next_pos = torch.where(obstacle_mask, torch.squeeze(target_world_pos), next_pos)
+        # next_pos = torch.where(obstacle_mask, torch.squeeze(target_world_pos), next_pos)
 
-        trajectory.append(cur_pos)
+        trajectory.append(next_pos)
         cur_positions.append(cur_position)
         cur_velocities.append(cur_velocity)
         return next_pos, trajectory, cur_positions, cur_velocities
@@ -38,25 +38,6 @@ def _rollout(model, initial_state, num_steps, target_world_pos):
     for step in range(num_steps):
         cur_pos, trajectory, cur_positions, cur_velocities = step_fn(cur_pos, trajectory, cur_positions, cur_velocities, target_world_pos[step])
     return (torch.stack(trajectory), torch.stack(cur_positions), torch.stack(cur_velocities))
-
-'''def to_polygons(faces, poses):
-    trajectory_result = []
-    step_result = []
-    for faces_step, poses_step in zip(faces, poses):
-        faces_step = faces_step.to('cpu')
-        poses_step = poses_step.to('cpu')
-        step_result.clear()
-        for i in np.arange(len(faces_step)):
-            square = [poses_step[faces_step[i, 0]], poses_step[faces_step[i, 1]], poses_step[faces_step[i, 2]], poses_step[faces_step[i, 3]]]
-            face = p3d.art3d.Poly3DCollection(square)
-            # face.set_color(colors.rgb2hex(sp.rand(3)))
-            # face.set_edgecolor('k')
-            # face.set_alpha(0.5)
-            # p3d.add_collection3d(face)
-            step_result.append(face)
-        trajectory_result.append(step_result)
-    return trajectory_result'''
-
 
 def evaluate(model, trajectory, num_steps=None):
     """Performs model rollouts and create stats."""

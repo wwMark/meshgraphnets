@@ -32,12 +32,12 @@ FLAGS = flags.FLAGS
 
 
 def main(unused_argv):
-    # path_prefix = 'E:\\meshgraphnets\\output\\deforming_plate\\'
-    # path_suffix = 'rollout\\rollout.pkl'
-    # rollout_paths = ['Mon-Jan-31-05-04-38-2022\\1', 'Fri-Jan-28-13-53-24-2022\\1']
-    path_prefix = '/home/kit/anthropomatik/sn2444/meshgraphnets/output/deforming_plate/'
-    path_suffix = 'rollout/rollout.pkl'
-    rollout_paths = ['Mon-Jan-31-05-04-38-2022/2', 'Mon-Jan-31-05-10-30-2022/2', 'Mon-Jan-31-05-20-38-2022/2', 'Mon-Jan-31-05-35-42-2022/2', 'Mon-Jan-31-05-39-05-2022/2', 'Mon-Jan-31-08-28-21-2022/2']
+    path_prefix = 'E:\\meshgraphnets\\output\\deforming_plate\\'
+    path_suffix = 'rollout\\rollout.pkl'
+    rollout_paths = ['Thu-Feb-10-19-34-07-2022\\1']
+    # path_prefix = '/home/kit/anthropomatik/sn2444/meshgraphnets/output/deforming_plate/'
+    # path_suffix = 'rollout/rollout.pkl'
+    # rollout_paths = ['Mon-Jan-31-05-04-38-2022/2', 'Mon-Jan-31-05-10-30-2022/2', 'Mon-Jan-31-05-20-38-2022/2', 'Mon-Jan-31-05-35-42-2022/2', 'Mon-Jan-31-05-39-05-2022/2', 'Mon-Jan-31-08-28-21-2022/2']
     for rollout_path in rollout_paths:
         save_path = os.path.join(path_prefix, rollout_path)
         data_path = os.path.join(path_prefix, rollout_path, path_suffix)
@@ -69,7 +69,7 @@ def main(unused_argv):
         def animate(num):
             # step = (num * skip) % num_steps
             # traj = 0
-            skip = 10
+            skip = 15
             traj = (num * skip) // num_steps
             step = (num * skip) % num_steps
             ax_origin.cla()
@@ -131,10 +131,10 @@ def main(unused_argv):
             # ax_cur_velocities.set_title('CUR_VELOCITY Trajectory %d Step %d' % (traj, step))
             return fig,
 
-        anima = animation.FuncAnimation(fig, animate, frames=math.floor(num_frames * 0.1 * 5), interval=100)
+        anima = animation.FuncAnimation(fig, animate, frames=math.floor(num_frames), interval=100)
         writervideo = animation.FFMpegWriter(fps=30)
-        anima.save(os.path.join(save_path, 'ani.mp4'), writer=writervideo)
-        # plt.show(block=True)
+        # anima.save(os.path.join(save_path, 'ani.mp4'), writer=writervideo)
+        plt.show(block=True)
 
 
 if __name__ == '__main__':

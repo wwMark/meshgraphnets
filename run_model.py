@@ -66,9 +66,9 @@ flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 5, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 5, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
@@ -76,7 +76,7 @@ flags.DEFINE_enum('core_model', 'encode_process_decode',
                    'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
                   'Core model to be used')
 flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 1, 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 7, 'No. of training epochs')
 flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
@@ -98,7 +98,7 @@ ripple_node_connection defines how the selected nodes of each ripple connect wit
     fully_connected: all the selected nodes are connected with each other
     fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
 '''
-flags.DEFINE_boolean('ripple_used', True, 'whether ripple is used or not')
+flags.DEFINE_boolean('ripple_used', False, 'whether ripple is used or not')
 flags.DEFINE_enum('ripple_generation', 'gradient', ['equal_size', 'gradient', 'exponential_size', 'random_nodes', 'distance_density'],
                   'defines how ripples are generated')
 flags.DEFINE_integer('ripple_generation_number', 5,
@@ -116,7 +116,7 @@ flags.DEFINE_integer('ripple_node_ncross', 1,
 # directory setting
 flags.DEFINE_string('model_last_run_dir',
                     None,
-                    # os.path.join('C:\\Users\\Mark\\OneDrive\\master_arbeit\\implementation\\meshgraphnets\\output\\deforming_plate\\Sat-Dec-25-17-50-02-2021'),
+                    # os.path.join('E:\\meshgraphnets\\output\\deforming_plate\\Wed-Feb--9-22-05-15-2022'),
                     # os.path.join('/home/i53/student/ruoheng_ma/meshgraphnets/output/deforming_plate', 'Mon-Jan--3-15-18-53-2022'),
                     'Path to the checkpoint file of a network that should continue training')
 
@@ -170,11 +170,11 @@ def add_targets(params):
     def fn(trajectory):
         out = {}
         for key, val in trajectory.items():
-            out[key] = val[1:-1]
+            out[key] = val[0:-1]
             if key in fields:
                 if add_history:
                     out['prev|' + key] = val[0:-2]
-                out['target|' + key] = val[2:]
+                out['target|' + key] = val[1:]
         return out
 
     return fn
@@ -185,6 +185,7 @@ def split_and_preprocess(params, model_type):
     noise_field = params['field']
     noise_scale = params['noise']
     noise_gamma = params['gamma']
+    loss_type = params['loss_type']
 
     def add_noise(frame):
         zero_size = torch.zeros(frame[noise_field].size(), dtype=torch.float32).to(device)
@@ -197,32 +198,11 @@ def split_and_preprocess(params, model_type):
         mask = torch.stack(mask_sequence, dim=1)
         noise = torch.where(mask, noise, torch.zeros_like(noise))
         frame[noise_field] += noise
-        frame['target|' + noise_field] += (1.0 - noise_gamma) * noise
+        if loss_type == 'cloth':
+            frame['target|' + noise_field] += (1.0 - noise_gamma) * noise
         return frame
 
     def element_operation(trajectory):
-        '''
-        if model_type == 'cloth':
-            world_pos = trajectory['world_pos']
-            mesh_pos = trajectory['mesh_pos']
-            node_type = trajectory['node_type']
-            cells = trajectory['cells']
-            target_world_pos = trajectory['target|world_pos']
-            prev_world_pos = trajectory['prev|world_pos']
-            trajectory_steps = []
-            for i in range(399):
-                wp = world_pos[i]
-                mp = mesh_pos[i]
-                twp = target_world_pos[i]
-                nt = node_type[i]
-                c = cells[i]
-                pwp = prev_world_pos[i]
-                trajectory_step = {'world_pos': wp, 'mesh_pos': mp, 'node_type': nt, 'cells': c,
-                                   'target|world_pos': twp, 'prev|world_pos': pwp}
-                noisy_trajectory_step = add_noise(trajectory_step)
-                trajectory_steps.append(noisy_trajectory_step)
-            return trajectory_steps
-        '''
         trajectory_steps = []
         for i in range(steps):
             trajectory_step = {}
@@ -250,7 +230,10 @@ def process_trajectory(trajectory_data, params, model_type, dataset_dir, add_tar
             shapes = {}
             dtypes = {}
             types = {}
-            steps = meta['trajectory_length'] - 2
+            if params['loss_type'] == 'cloth':
+                steps = meta['trajectory_length'] - 2
+            elif params['loss_type'] == 'deform':
+                steps = meta['trajectory_length'] - 1
             for key, field in meta['features'].items():
                 shapes[key] = field['shape']
                 dtypes[key] = field['dtype']
@@ -341,7 +324,7 @@ def learner(model, params, run_step_config):
                 is_train_break = True
                 break
 
-        ds_loader = dataset.load_dataset(run_step_config['dataset_dir'], 'train', batch_size=batch_size,
+        ds_loader = dataset.load_dataset(run_step_config['dataset_dir'], 'valid', batch_size=batch_size,
                                          prefetch_factor=prefetch_factor,
                                          add_targets=True, split_and_preprocess=True)
         # every time when model.train is called, model will train itself with the whole dataset
@@ -471,11 +454,14 @@ def loss_fn(loss_type, inputs, network_output, model, params):
         # build loss
         # print(network_output[187])
         node_type = inputs['node_type']
-        # loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
-        loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device).int())
-        loss_mask = torch.logical_not(loss_mask)
+        # loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.HANDLE.value], device=device).int())
+        # loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device).int())
+        # loss_mask = torch.logical_not(loss_mask)
+        # error = torch.sum((target_normalized - network_output) ** 2, dim=1)
+        # loss = torch.mean(error[loss_mask])
+
         error = torch.sum((target_normalized - network_output) ** 2, dim=1)
-        loss = torch.mean(error[loss_mask])
+        loss = torch.mean(error)
         return loss
 
 def evaluator(params, model, run_step_config):
@@ -502,7 +488,7 @@ def evaluator(params, model, run_step_config):
             mse_loss = mse_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
             l1_loss = l1_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
         elif model_type == 'deform':
-            mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['cur_velocities'])
+            mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
             l1_loss = l1_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
         mse_losses.append(mse_loss.cpu())
         l1_losses.append(l1_loss.cpu())
@@ -809,7 +795,7 @@ def main(argv):
         model.evaluate()
         model.to(device)
         eval_loss_record = evaluator(params, model, run_step_config)
-        step_loss = n_step_evaluator(params, model, run_step_config, n_step_list=[1, 3, 5, 7, 10], n_traj=5)
+        step_loss = n_step_evaluator(params, model, run_step_config, n_step_list=[1], n_traj=1)
         if last_run_dir is not None and train_loss_record is None:
             train_loss_record = pickle_load(os.path.join(last_run_step_dir, 'log', 'train_loss.pkl'))
         root_logger.info("Finished evaluating......")

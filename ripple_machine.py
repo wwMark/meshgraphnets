@@ -307,7 +307,7 @@ class RippleMachine():
             self._ripple_node_selector = RippleNodeSelector(ripple_node_selection, ripple_node_selection_random_top_n)
             self._ripple_node_connector = RippleNodeConnector(ripple_node_connection, ripple_node_ncross)
 
-    def add_meta_edges(self, graph, edge_normalizer, is_training):
+    def add_meta_edges(self, graph, mesh_edge_normalizer, world_edge_normalizer, is_training):
         if self._ripple_generation == 'random_nodes' or self._ripple_generation == 'distance_density':
             target_feature = graph.target_feature
             mesh_pos = graph.mesh_pos
@@ -347,96 +347,3 @@ class RippleMachine():
             selected_nodes = self._ripple_node_selector.select_nodes(ripple_indices)
             new_graph = self._ripple_node_connector.connect(graph, ripple_indices, selected_nodes, edge_normalizer, is_training)
         return new_graph
-
-'''
-class RippleConnectionGenerator(nn.Module):
-    
-    # ripple_size_generator will generate for each ripple a node size according to some math equation
-
-    def __init__(self, make_mlp, output_size):
-        super().__init__()
-        self._ripple_model = self._ripple_params['model']
-
-        # ripple model will learn ripple influence based on source feature and source-destination distance
-        self.ripple_model = make_mlp(output_size)
-        if self._normalize_connection:
-            self.ripple_model = nn.Sequential(nn.LayerNorm(normalized_shape=17), self.ripple_model)
-
-    def generate_ripple_sample_size(self, ripple_order, ripple_size, ripple_sample_size_generator):
-        # Currently assume that exponential
-        if ripple_sample_size_generator == 'equal':
-            equal_generator_sample_size = self._equal_generator_sample_size
-            if equal_generator_sample_size > ripple_size:
-                print(equal_generator_sample_size)
-                print(ripple_size)
-                raise Exception(
-                    'Equal ripple sample size generator does not work properly. Sample number of nodes in ripple are greater than number of all ripple nodes!')
-            return equal_generator_sample_size
-        elif ripple_sample_size_generator == 'exponential':
-            sample_size = (ripple_order + 1) * (ripple_order + 1)
-            if sample_size > ripple_size:
-                raise Exception(
-                    'Exponential ripple size generator does not work properly. Sample number of nodes in ripple are greater than number of all ripple nodes!')
-            return sample_size
-
-    def forward(self, latent_graph, graph):
-        # get graph node features with the highest velocity
-        world_pos_matrix = graph.world_pos
-        mesh_pos_matrix = graph.mesh_pos
-        velocity_matrix = graph.node_features[:, 0:3]
-        num_nodes = world_pos_matrix.shape[0]
-        num_influential_nodes = ceil(world_pos_matrix.shape[
-                                         0] * self._num_or_percentage_value) if self._num_or_percentage == 'percentage' else self._num_or_percentage_value
-        sort_by_velocity = torch.square(velocity_matrix)
-        sort_by_velocity = torch.sum(sort_by_velocity, dim=-1)
-        _, sort_indices = torch.sort(sort_by_velocity, dim=0, descending=True)
-
-        # virtual highest node is the sum of a number of the highest node
-        highest_velocity_node_feature = torch.sum(velocity_matrix[sort_indices[0:num_influential_nodes]], dim=0)
-        highest_velocity_node_world_pos = torch.sum(world_pos_matrix[sort_indices[0:num_influential_nodes]], dim=0)
-        highest_velocity_node_mesh_pos = torch.sum(mesh_pos_matrix[sort_indices[0:num_influential_nodes]], dim=0)
-
-        # get all nodes that need to establish a connection with highest_velocity_node from velocity_matrix
-        ripple_size = num_nodes // self._num_ripples
-        ripple_size_rest = num_nodes % self._num_ripples
-        ripple_nodes_feature = []
-        ripple_nodes_index = []
-        ripple_nodes_world_pos = []
-        ripple_nodes_mesh_pos = []
-        for i in range(self._num_ripples):
-            start_index = i * ripple_size
-            ripple_actual_size = ripple_size if i < self._num_ripples - 1 else ripple_size + ripple_size_rest
-            ripple_sample_size = self.generate_ripple_sample_size(i, ripple_actual_size,
-                                                                  ripple_sample_size_generator='equal')
-            end_index = start_index + ripple_actual_size
-
-            random_select_mask = torch.randperm(n=ripple_actual_size)[0:ripple_sample_size]
-            random_select_mask = random_select_mask[0:ripple_sample_size]
-
-            info_of_a_ripple = velocity_matrix[start_index:end_index]
-            info_of_a_ripple = info_of_a_ripple[random_select_mask]
-            ripple_nodes_feature.append(info_of_a_ripple)
-            index = random_select_mask + start_index
-            ripple_nodes_index.append(index)
-            info_of_a_ripple = world_pos_matrix[start_index:end_index]
-            info_of_a_ripple = info_of_a_ripple[random_select_mask]
-            ripple_nodes_world_pos.append(info_of_a_ripple)
-            info_of_a_ripple = mesh_pos_matrix[start_index:end_index]
-            info_of_a_ripple = info_of_a_ripple[random_select_mask]
-            ripple_nodes_mesh_pos.append(info_of_a_ripple)
-        ripple_nodes_feature = torch.cat(ripple_nodes_feature, dim=0)
-        ripple_nodes_index = torch.cat(ripple_nodes_index, dim=0)
-        ripple_nodes_world_pos = torch.cat(ripple_nodes_world_pos, dim=0)
-        ripple_nodes_mesh_pos = torch.cat(ripple_nodes_mesh_pos, dim=0)
-
-        relative_world_pos = torch.sub(ripple_nodes_world_pos, highest_velocity_node_world_pos)
-        relative_mesh_pos = torch.sub(ripple_nodes_mesh_pos, highest_velocity_node_mesh_pos)
-
-        ripple_and_highest_info = torch.cat((highest_velocity_node_feature.repeat(ripple_nodes_feature.shape[0],
-                                                                                  highest_velocity_node_feature.shape[
-                                                                                      0]), ripple_nodes_feature,
-                                             relative_world_pos, relative_mesh_pos), dim=-1)
-        ripple_and_highest_result = self.ripple_model(ripple_and_highest_info)
-        latent_graph.node_features[ripple_nodes_index] += ripple_and_highest_result
-        return latent_graph
-'''

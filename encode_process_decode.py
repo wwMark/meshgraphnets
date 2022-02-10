@@ -31,7 +31,7 @@ import ripple_machine
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])
 MultiGraph = collections.namedtuple('Graph', ['node_features', 'edge_sets'])
-MultiGraphWithPos = collections.namedtuple('Graph', ['node_features', 'edge_sets', 'target_feature', 'mesh_pos', 'model_type'])
+MultiGraphWithPos = collections.namedtuple('Graph', ['node_features', 'edge_sets', 'target_feature', 'mesh_pos', 'model_type', 'node_dynamic'])
 
 device = torch.device('cuda')
 
@@ -73,7 +73,8 @@ class GraphNetBlock(nn.Module):
 
     def __init__(self, model_fn, output_size, message_passing_aggregator, attention=False):
         super().__init__()
-        self.edge_model = model_fn(output_size)
+        self.mesh_edge_model = model_fn(output_size)
+        self.world_edge_model = model_fn(output_size)
         self.node_model = model_fn(output_size)
         self.attention = attention
         if attention:
@@ -88,15 +89,10 @@ class GraphNetBlock(nn.Module):
         receiver_features = torch.index_select(input=node_features, dim=0, index=receivers)
         features = [sender_features, receiver_features, edge_set.features]
         features = torch.cat(features, dim=-1)
-        return self.edge_model(features)
-
-    '''
-    def _update_node_features_mp_helper(self, features, receivers, add_intermediate):
-        for index, feature_tensor in enumerate(features):
-            des_index = receivers[index]
-            add_intermediate[des_index].add(feature_tensor)
-        return add_intermediate
-    '''
+        if edge_set.name == "mesh_edges":
+            return self.mesh_edge_model(features)
+        elif edge_set.name == "world_edges":
+            return self.world_edge_model(features)
 
     def unsorted_segment_operation(self, data, segment_ids, num_segments, operation):
         """
@@ -218,27 +214,26 @@ class Encoder(nn.Module):
         self._latent_size = latent_size
         self.node_model = self._make_mlp(latent_size)
         self.mesh_edge_model = self._make_mlp(latent_size)
-        '''
-        for _ in graph.edge_sets:
-          edge_model = make_mlp(latent_size)
-          self.edge_models.append(edge_model)
-        '''
+        self.world_edge_model = self._make_mlp(latent_size)
 
     def forward(self, graph):
         node_latents = self.node_model(graph.node_features)
         new_edges_sets = []
 
         for index, edge_set in enumerate(graph.edge_sets):
-            feature = edge_set.features
-            latent = self.mesh_edge_model(feature)
-            new_edges_sets.append(edge_set._replace(features=latent))
+            if edge_set.name == "mesh_edges":
+                feature = edge_set.features
+                latent = self.mesh_edge_model(feature)
+                new_edges_sets.append(edge_set._replace(features=latent))
+            elif edge_set.name == "world_edges":
+                feature = edge_set.features
+                latent = self.world_edge_model(feature)
+                new_edges_sets.append(edge_set._replace(features=latent))
         return MultiGraph(node_latents, new_edges_sets)
 
 
 class Decoder(nn.Module):
     """Decodes node features from graph."""
-    # decoder = self._make_mlp(self._output_size, layer_norm=False)
-    # return decoder(graph.node_features)
 
     """Encodes node and edge features into latent features."""
 
@@ -269,18 +264,12 @@ class Processor(nn.Module):
                                                       attention=attention))
 
     def forward(self, latent_graph, normalized_adj_mat=None, mask=None):
-        if self.stochastic_message_passing_used:
-            for graphnet_block in self.graphnet_blocks:
-                latent_graph = latent_graph._replace(node_features=torch.matmul(normalized_adj_mat, latent_graph.node_features))
+        for graphnet_block in self.graphnet_blocks:
+            if mask is not None:
+                latent_graph = graphnet_block(latent_graph, mask)
+            else:
                 latent_graph = graphnet_block(latent_graph)
-            return latent_graph
-        else:
-            for graphnet_block in self.graphnet_blocks:
-                if mask is not None:
-                    latent_graph = graphnet_block(latent_graph, mask)
-                else:
-                    latent_graph = graphnet_block(latent_graph)
-            return latent_graph
+        return latent_graph
 
 '''
 class StochasticFuser(nn.Module):
@@ -327,32 +316,7 @@ class EncodeProcessDecode(nn.Module):
             self._ripple_machine = ripple_machine.RippleMachine(ripple_generation, ripple_generation_number, ripple_node_selection,
                  ripple_node_selection_random_top_n, ripple_node_connection, ripple_node_ncross)
 
-        '''
-        self.normalize_connection_in_rcg = True
-        self.num_ripples = 6
-        self.ripple_sample_size_generator = 'equal'
-        self.num_or_percentage = {'option': 'percentage', 'value': 0.01}
-        self.equal_generator_sample_size = 10
-        self.attention = True
-        '''
-
         self.encoder = Encoder(make_mlp=self._make_mlp, latent_size=self._latent_size)
-        '''
-        if self._ripple_used:
-            self.ripple_connection_generator = RippleConnectionGenerator(make_mlp=self._make_mlp,
-                                                                         output_size=self._latent_size,
-                                                                         normalize_connection=self.normalize_connection_in_rcg,
-                                                                         ripple_params=self._ripple_params)
-        '''
-        '''
-            self.ripple_connection_generator = RippleConnectionGenerator(make_mlp=self._make_mlp,
-                                                                         output_size=self._latent_size,
-                                                                         normalize_connection=self.normalize_connection_in_rcg,
-                                                                         num_ripples=self.num_ripples,
-                                                                         ripple_sample_size_generator=self.ripple_sample_size_generator,
-                                                                         num_or_percentage=self.num_or_percentage,
-                                                                         equal_generator_sample_size=self.equal_generator_sample_size)
-        '''
         self.processor = Processor(make_mlp=self._make_mlp, output_size=self._latent_size,
                                    message_passing_steps=self._message_passing_steps,
                                    message_passing_aggregator=self._message_passing_aggregator,
@@ -360,15 +324,6 @@ class EncodeProcessDecode(nn.Module):
                                    stochastic_message_passing_used=False)
         self.decoder = Decoder(make_mlp=functools.partial(self._make_mlp, layer_norm=False),
                                output_size=self._output_size)
-
-    '''
-    def get_core_model_config(self):
-        return {"normalize_connection_in_rcg": self.normalize_connection_in_rcg, 'num_ripples': self.num_ripples,
-                'ripple_sample_size_generator': self.ripple_sample_size_generator,
-                'num_or_percentage': self.num_or_percentage,
-                'equal_generator_sample_size': self.equal_generator_sample_size,
-                'attention': self.attention}
-    '''
 
     def _make_mlp(self, output_size, layer_norm=True):
         """Builds an MLP."""
@@ -378,31 +333,10 @@ class EncodeProcessDecode(nn.Module):
             network = nn.Sequential(network, nn.LayerNorm(normalized_shape=widths[-1]))
         return network
 
-    def forward(self, graph, edge_normalizer, is_training, normalized_adj_mat=None, sto_mat=None, mask=None):
+    def forward(self, graph, mesh_edge_normalizer, is_training, world_edge_normalizer=None):
         """Encodes and processes a multigraph, and returns node features."""
         if self._ripple_used:
-            graph = self._ripple_machine.add_meta_edges(graph, edge_normalizer, is_training)
+            graph = self._ripple_machine.add_meta_edges(graph, mesh_edge_normalizer, world_edge_normalizer, is_training)
         latent_graph = self.encoder(graph)
-        # if self._ripple_used:
-        #    latent_graph = self.ripple_connection_generator(latent_graph, graph)
-        if mask is not None:
-            latent_graph = self.processor(latent_graph, mask=mask)
-        else:
-            latent_graph = self.processor(latent_graph)
+        latent_graph = self.processor(latent_graph)
         return self.decoder(latent_graph)
-        '''
-        stochastic message passing is not necessary
-        if self.stochastic_message_passing_used:
-            sto_graph = graph._replace(node_features=torch.cat((graph.node_features, sto_mat), dim=-1))
-            latent_graph = self.encoder(sto_graph)
-            latent_graph = self.ripple_connection_generator(latent_graph, graph)
-            latent_graph = self.processor(latent_graph, normalized_adj_mat)
-            return self.decoder(latent_graph)
-        else:
-            graph = self._ripple_machine.add_meta_edges(graph)
-            latent_graph = self.encoder(graph)
-            # if self._ripple_used:
-            #    latent_graph = self.ripple_connection_generator(latent_graph, graph)
-            latent_graph = self.processor(latent_graph)
-            return self.decoder(latent_graph)
-        '''
