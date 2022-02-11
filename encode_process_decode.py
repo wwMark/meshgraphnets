@@ -31,7 +31,7 @@ import ripple_machine
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])
 MultiGraph = collections.namedtuple('Graph', ['node_features', 'edge_sets'])
-MultiGraphWithPos = collections.namedtuple('Graph', ['node_features', 'edge_sets', 'target_feature', 'mesh_pos', 'model_type', 'node_dynamic'])
+MultiGraphWithPos = collections.namedtuple('Graph', ['node_features', 'edge_sets', 'target_feature', 'model_type', 'node_dynamic'])
 
 device = torch.device('cuda')
 
@@ -58,11 +58,14 @@ class AttentionModel(nn.Module):
         super().__init__()
         self.linear_layer = nn.LazyLinear(1)
         self.leaky_relu = nn.LeakyReLU(negative_slope=0.2)
+        self.to(device)
 
     def forward(self, input, index):
+
         latent = self.linear_layer(input)
         latent = self.leaky_relu(latent)
         result = torch.zeros(*latent.shape)
+
         result = scatter_softmax(latent.float(), index, dim=0)
         result = result.type(result.dtype)
         return result
@@ -81,6 +84,9 @@ class GraphNetBlock(nn.Module):
             self.attention_model = AttentionModel()
         self.message_passing_aggregator = message_passing_aggregator
 
+        self.linear_layer = nn.LazyLinear(1)
+        self.leaky_relu = nn.LeakyReLU(negative_slope=0.2)
+
     def _update_edge_features(self, node_features, edge_set):
         """Aggregrates node features, and applies edge function."""
         senders = edge_set.senders.to(device)
@@ -91,7 +97,7 @@ class GraphNetBlock(nn.Module):
         features = torch.cat(features, dim=-1)
         if edge_set.name == "mesh_edges":
             return self.mesh_edge_model(features)
-        elif edge_set.name == "world_edges":
+        else:
             return self.world_edge_model(features)
 
     def unsorted_segment_operation(self, data, segment_ids, num_segments, operation):
@@ -106,6 +112,8 @@ class GraphNetBlock(nn.Module):
         assert all([i in data.shape for i in segment_ids.shape]), "segment_ids.shape should be a prefix of data.shape"
 
         # segment_ids is a 1-D tensor repeat it to have the same shape as data
+        data = data.to(device)
+        segment_ids = segment_ids.to(device)
         if len(segment_ids.shape) == 1:
             s = torch.prod(torch.tensor(data.shape[1:])).long().to(device)
             segment_ids = segment_ids.repeat_interleave(s).view(segment_ids.shape[0], *data.shape[1:]).to(device)
@@ -113,7 +121,7 @@ class GraphNetBlock(nn.Module):
         assert data.shape == segment_ids.shape, "data.shape and segment_ids.shape should be equal"
 
         shape = [num_segments] + list(data.shape[1:])
-        result = torch.zeros(*shape)
+        result = torch.zeros(*shape).to(device)
         if operation == 'sum':
             result = torch_scatter.scatter_add(data.float(), segment_ids, dim=0, dim_size=num_segments)
         elif operation == 'max':
@@ -122,6 +130,8 @@ class GraphNetBlock(nn.Module):
             result = torch_scatter.scatter_mean(data.float(), segment_ids, dim=0, dim_size=num_segments)
         elif operation == 'min':
             result, _ = torch_scatter.scatter_min(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'std':
+            result = torch_scatter.scatter_std(data.float(), segment_ids, out=result, dim=0, dim_size=num_segments)
         else:
             raise Exception('Invalid operation type!')
         result = result.type(data.dtype)
@@ -133,13 +143,9 @@ class GraphNetBlock(nn.Module):
         features = [node_features]
         for edge_set in edge_sets:
             if self.attention and self.message_passing_aggregator == 'pna':
-                receiver_features = edge_set.features[edge_set.receivers]
-                sender_features = edge_set.features[edge_set.senders]
-                attention = self.attention_model(torch.cat((sender_features, receiver_features), dim=1),
-                                                 edge_set.receivers)
-                attention = attention.repeat_interleave(
-                    torch.prod(torch.tensor(edge_set.features.shape[1:])).long().to(device))
-                attention = attention.view(edge_set.features.shape[0], *edge_set.features.shape[1:]).to(device)
+                attention_input = self.linear_layer(edge_set.features)
+                attention_input = self.leaky_relu(attention_input)
+                attention = F.softmax(attention_input, dim=0)
                 features.append(
                     self.unsorted_segment_operation(torch.mul(edge_set.features, attention), edge_set.receivers,
                                                     num_nodes, operation='sum'))
@@ -153,13 +159,9 @@ class GraphNetBlock(nn.Module):
                     self.unsorted_segment_operation(torch.mul(edge_set.features, attention), edge_set.receivers,
                                                     num_nodes, operation='min'))
             elif self.attention:
-                receiver_features = edge_set.features[edge_set.receivers]
-                sender_features = edge_set.features[edge_set.senders]
-                attention = self.attention_model(torch.cat((sender_features, receiver_features), dim=1),
-                                                 edge_set.receivers)
-                attention = attention.repeat_interleave(
-                    torch.prod(torch.tensor(edge_set.features.shape[1:])).long().to(device))
-                attention = attention.view(edge_set.features.shape[0], *edge_set.features.shape[1:]).to(device)
+                attention_input = self.linear_layer(edge_set.features)
+                attention_input = self.leaky_relu(attention_input)
+                attention = F.softmax(attention_input, dim=0)
                 features.append(
                     self.unsorted_segment_operation(torch.mul(edge_set.features, attention), edge_set.receivers,
                                                     num_nodes, operation=self.message_passing_aggregator))
@@ -225,7 +227,7 @@ class Encoder(nn.Module):
                 feature = edge_set.features
                 latent = self.mesh_edge_model(feature)
                 new_edges_sets.append(edge_set._replace(features=latent))
-            elif edge_set.name == "world_edges":
+            else:
                 feature = edge_set.features
                 latent = self.world_edge_model(feature)
                 new_edges_sets.append(edge_set._replace(features=latent))
@@ -271,20 +273,6 @@ class Processor(nn.Module):
                 latent_graph = graphnet_block(latent_graph)
         return latent_graph
 
-'''
-class StochasticFuser(nn.Module):
-    def __init__(self, make_mlp, output_size):
-        super().__init__()
-        self._submodules_ordered_dict = OrderedDict()
-        self.sto_fuse_model = self._make_mlp(self._latent_size)
-
-    def forward(self, latent_graph, sto_repr):
-        node_features = latent_graph.node_features
-        fuser_input = torch.cat((node_features, sto_repr), dim=-1)
-        node_features = self.sto_fuse_model(fuser_input)
-        return latent_graph._replace(node_features=node_features)
-'''
-
 class EncodeProcessDecode(nn.Module):
     """Encode-Process-Decode GraphNet model."""
 
@@ -308,7 +296,7 @@ class EncodeProcessDecode(nn.Module):
         self._ripple_used = ripple_used
         if self._ripple_used:
             self._ripple_generation = ripple_generation
-            self._ripple_generation_number =ripple_generation_number
+            self._ripple_generation_number = ripple_generation_number
             self._ripple_node_selection = ripple_node_selection
             self._ripple_node_selection_random_top_n = ripple_node_selection_random_top_n
             self._ripple_node_connection = ripple_node_connection
@@ -333,10 +321,10 @@ class EncodeProcessDecode(nn.Module):
             network = nn.Sequential(network, nn.LayerNorm(normalized_shape=widths[-1]))
         return network
 
-    def forward(self, graph, mesh_edge_normalizer, is_training, world_edge_normalizer=None):
+    def forward(self, graph, is_training, world_edge_normalizer=None):
         """Encodes and processes a multigraph, and returns node features."""
         if self._ripple_used:
-            graph = self._ripple_machine.add_meta_edges(graph, mesh_edge_normalizer, world_edge_normalizer, is_training)
+            graph = self._ripple_machine.add_meta_edges(graph, world_edge_normalizer, is_training)
         latent_graph = self.encoder(graph)
         latent_graph = self.processor(latent_graph)
         return self.decoder(latent_graph)

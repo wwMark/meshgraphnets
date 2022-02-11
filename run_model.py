@@ -58,22 +58,21 @@ device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'deform', ['cfd', 'cloth', 'deform'],
+flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 3, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 5, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 5, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 5, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 10, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
-                  ['encode_process_decode', 'encode_process_decode_max_pooling', 'encode_process_decode_lstm',
-                   'encode_process_decode_graph_structure_watcher', 'encode_process_decode_ripple'],
+                  ['encode_process_decode'],
                   'Core model to be used')
 flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
 flags.DEFINE_integer('message_passing_steps', 7, 'No. of training epochs')
@@ -99,18 +98,18 @@ ripple_node_connection defines how the selected nodes of each ripple connect wit
     fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
 '''
 flags.DEFINE_boolean('ripple_used', False, 'whether ripple is used or not')
-flags.DEFINE_enum('ripple_generation', 'gradient', ['equal_size', 'gradient', 'exponential_size', 'random_nodes', 'distance_density'],
+flags.DEFINE_enum('ripple_generation', 'equal_size', ['equal_size', 'gradient', 'exponential_size', 'random_nodes', 'distance_density'],
                   'defines how ripples are generated')
 flags.DEFINE_integer('ripple_generation_number', 5,
                      'defines how many ripples should be generated in equal size and gradient ripple generation; or the base in exponential size generation')
-flags.DEFINE_enum('ripple_node_selection', 'random', ['random', 'all', 'top'],
+flags.DEFINE_enum('ripple_node_selection', 'top', ['random', 'all', 'top'],
                   'defines how the nodes are selected from each ripple')
 flags.DEFINE_integer('ripple_node_selection_random_top_n', 3,
                      'defines how many nodes are selected from each ripple if node selection is random or top')
-flags.DEFINE_enum('ripple_node_connection', 'fully_ncross_connected',
+flags.DEFINE_enum('ripple_node_connection', 'most_influential',
                   ['most_influential', 'fully_connected', 'fully_ncross_connected'],
                   'defines how the selected nodes of each ripple connect with each other to propagate message faster')
-flags.DEFINE_integer('ripple_node_ncross', 1,
+flags.DEFINE_integer('ripple_node_ncross', 3,
                      'defines how many fully cross connections should be generated between ripples')
 
 # directory setting
@@ -166,17 +165,29 @@ def add_targets(params):
     """Adds target and optionally history fields to dataframe."""
     fields = params['field']
     add_history = params['history']
+    loss_type = params['loss_type']
 
     def fn(trajectory):
-        out = {}
-        for key, val in trajectory.items():
-            out[key] = val[0:-1]
-            if key in fields:
-                if add_history:
-                    out['prev|' + key] = val[0:-2]
-                out['target|' + key] = val[1:]
-        return out
-
+        if loss_type == 'deform':
+            out = {}
+            for key, val in trajectory.items():
+                out[key] = val[0:-1]
+                if key in fields:
+                    if add_history:
+                        out['prev|' + key] = val[0:-2]
+                    out['target|' + key] = val[1:]
+                if key == 'stress':
+                    out['target|stress'] = val[1:]
+            return out
+        elif loss_type == 'cloth':
+            out = {}
+            for key, val in trajectory.items():
+                out[key] = val[1:-1]
+                if key in fields:
+                    if add_history:
+                        out['prev|' + key] = val[0:-2]
+                    out['target|' + key] = val[2:]
+            return out
     return fn
 
 
@@ -324,7 +335,7 @@ def learner(model, params, run_step_config):
                 is_train_break = True
                 break
 
-        ds_loader = dataset.load_dataset(run_step_config['dataset_dir'], 'valid', batch_size=batch_size,
+        ds_loader = dataset.load_dataset(run_step_config['dataset_dir'], 'train', batch_size=batch_size,
                                          prefetch_factor=prefetch_factor,
                                          add_targets=True, split_and_preprocess=True)
         # every time when model.train is called, model will train itself with the whole dataset
@@ -445,11 +456,14 @@ def loss_fn(loss_type, inputs, network_output, model, params):
     elif loss_type == 'deform':
         world_pos = inputs['world_pos']
         target_world_pos = inputs['target|world_pos']
+        target_stress = inputs['target|stress']
 
         cur_position = world_pos
         target_position = target_world_pos
         target_velocity = target_position - cur_position
-        target_normalized = model.get_output_normalizer()(target_velocity).to(device)
+        world_pos_normalizer, stress_normalizer = model.get_output_normalizer()
+        target_normalized = world_pos_normalizer(target_velocity).to(device)
+        target_normalized_stress = stress_normalizer(target_stress).to(device)
 
         # build loss
         # print(network_output[187])
@@ -460,7 +474,7 @@ def loss_fn(loss_type, inputs, network_output, model, params):
         # error = torch.sum((target_normalized - network_output) ** 2, dim=1)
         # loss = torch.mean(error[loss_mask])
 
-        error = torch.sum((target_normalized - network_output) ** 2, dim=1)
+        error = torch.sum((target_normalized - network_output) ** 2, dim=1) + torch.sum((target_normalized_stress - network_output) ** 2, dim=1)
         loss = torch.mean(error)
         return loss
 

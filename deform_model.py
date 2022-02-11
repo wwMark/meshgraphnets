@@ -24,8 +24,9 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self._params = params
         self._output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
+        self._stress_output_normalizer = normalization.Normalizer(size=3, name='stress_output_normalizer')
         self._node_normalizer = normalization.Normalizer(size=3, name='node_normalizer')
-        self._node_dynamic_normalizer = normalization.Normalizer(size=1, name='node_normalizer')
+        self._node_dynamic_normalizer = normalization.Normalizer(size=1, name='node_dynamic_normalizer')
         self._mesh_edge_normalizer = normalization.Normalizer(size=8, name='mesh_edge_normalizer')
         self._world_edge_normalizer = normalization.Normalizer(size=4, name='world_edge_normalizer')
         self._model_type = params['model'].__name__
@@ -181,7 +182,7 @@ class Model(nn.Module):
 
             return (self.core_model.MultiGraphWithPos(node_features=node_features,
                                                      edge_sets=[mesh_edges, world_edges], target_feature=world_pos,
-                                                     mesh_pos=mesh_pos, model_type=self._model_type, node_dynamic=node_dynamic))
+                                                     model_type=self._model_type, node_dynamic=node_dynamic))
         else:
             return (self.core_model.MultiGraph(node_features=node_features,
                                               edge_sets=[mesh_edges, world_edges]))
@@ -189,26 +190,28 @@ class Model(nn.Module):
     def forward(self, inputs, is_training):
         graph = self._build_graph(inputs, is_training=is_training)
         if is_training:
-            return self.learned_model(graph, self._mesh_edge_normalizer, world_edge_normalizer=self._world_edge_normalizer, is_training=is_training)
+            return self.learned_model(graph, world_edge_normalizer=self._world_edge_normalizer, is_training=is_training)
         else:
-            return self._update(inputs, self.learned_model(graph, self._mesh_edge_normalizer, world_edge_normalizer=self._world_edge_normalizer, is_training=is_training))
+            return self._update(inputs, self.learned_model(graph, world_edge_normalizer=self._world_edge_normalizer, is_training=is_training))
 
     def _update(self, inputs, per_node_network_output):
         """Integrate model outputs."""
         velocity = self._output_normalizer.inverse(per_node_network_output)
+        stress = self._stress_output_normalizer.inverse(per_node_network_output)
 
 
         # integrate forward
         cur_position = inputs['world_pos']
         position = cur_position + velocity
-        return (position, cur_position, velocity)
+        return (position, cur_position, velocity, stress)
 
     def get_output_normalizer(self):
-        return self._output_normalizer
+        return (self._output_normalizer, self._stress_output_normalizer)
 
     def save_model(self, path):
         torch.save(self.learned_model, path + "_learned_model.pth")
         torch.save(self._output_normalizer, path + "_output_normalizer.pth")
+        torch.save(self._stress_output_normalizer, path + "_stress_output_normalizer.pth")
         torch.save(self._mesh_edge_normalizer, path + "_mesh_edge_normalizer.pth")
         torch.save(self._world_edge_normalizer, path + "_world_edge_normalizer.pth")
         torch.save(self._node_normalizer, path + "_node_normalizer.pth")
@@ -216,6 +219,7 @@ class Model(nn.Module):
     def load_model(self, path):
         self.learned_model = torch.load(path + "_learned_model.pth")
         self._output_normalizer = torch.load(path + "_output_normalizer.pth")
+        self._stress_output_normalizer = torch.load(path + "_stress_output_normalizer.pth")
         self._mesh_edge_normalizer = torch.load(path + "_mesh_edge_normalizer.pth")
         self._world_edge_normalizer = torch.load(path + "_world_edge_normalizer.pth")
         self._node_normalizer = torch.load(path + "_node_normalizer.pth")

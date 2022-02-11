@@ -23,9 +23,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import encode_process_decode
-import encode_process_decode_max_pooling
-import encode_process_decode_lstm
-import encode_process_decode_graph_structure_watcher
 
 device = torch.device('cuda')
 

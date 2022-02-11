@@ -22,12 +22,10 @@ import torch.nn.functional as F
 # from torch_cluster import random_walk
 import functools
 
+import torch_scatter
 import common
 import normalization
 import encode_process_decode
-import encode_process_decode_max_pooling
-import encode_process_decode_lstm
-import encode_process_decode_graph_structure_watcher
 
 device = torch.device('cuda')
 
@@ -45,20 +43,14 @@ class Model(nn.Module):
         self._output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
         self._node_normalizer = normalization.Normalizer(
             size=3 + common.NodeType.SIZE, name='node_normalizer')
-        self._edge_normalizer = normalization.Normalizer(
+        self._node_dynamic_normalizer = normalization.Normalizer(size=1, name='node_normalizer')
+        self._mesh_edge_normalizer = normalization.Normalizer(
             size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
+        self._world_edge_normalizer = normalization.Normalizer(size=4, name='world_edge_normalizer')
         self._model_type = params['model'].__name__
 
-        # for stochastic message passing
-        '''
-        self.random_walk_generation_interval = 399
-        self.input_count = 0
-        self.sto_mat = None
-        self.normalized_adj_mat = None
-        '''
-
         self.core_model_name = core_model_name
-        self.core_model = self.select_core_model(core_model_name)
+        self.core_model = encode_process_decode
         self.message_passing_steps = message_passing_steps
         self.message_passing_aggregator = message_passing_aggregator
         self._attention = attention
@@ -70,8 +62,6 @@ class Model(nn.Module):
             self._ripple_node_selection_random_top_n = ripple_node_selection_random_top_n
             self._ripple_node_connection = ripple_node_connection
             self._ripple_node_ncross = ripple_node_ncross
-        # self.stochastic_message_passing_used = False
-        if self._ripple_used:
             self.learned_model = self.core_model.EncodeProcessDecode(
                 output_size=params['size'],
                 latent_size=128,
@@ -93,13 +83,38 @@ class Model(nn.Module):
                 message_passing_aggregator=self.message_passing_aggregator, attention=self._attention,
                 ripple_used=self._ripple_used)
 
-    def select_core_model(self, core_model_name):
-        return {
-            'encode_process_decode': encode_process_decode,
-            'encode_process_decode_graph_structure_watcher': encode_process_decode_graph_structure_watcher,
-            'encode_process_decode_max_pooling': encode_process_decode_max_pooling,
-            'encode_process_decode_lstm': encode_process_decode_lstm,
-        }.get(core_model_name, encode_process_decode)
+    def unsorted_segment_operation(self, data, segment_ids, num_segments, operation):
+        """
+        Computes the sum along segments of a tensor. Analogous to tf.unsorted_segment_sum.
+
+        :param data: A tensor whose segments are to be summed.
+        :param segment_ids: The segment indices tensor.
+        :param num_segments: The number of segments.
+        :return: A tensor of same data type as the data argument.
+        """
+        assert all([i in data.shape for i in segment_ids.shape]), "segment_ids.shape should be a prefix of data.shape"
+
+        # segment_ids is a 1-D tensor repeat it to have the same shape as data
+        if len(segment_ids.shape) == 1:
+            s = torch.prod(torch.tensor(data.shape[1:])).long().to(device)
+            segment_ids = segment_ids.repeat_interleave(s).view(segment_ids.shape[0], *data.shape[1:]).to(device)
+
+        assert data.shape == segment_ids.shape, "data.shape and segment_ids.shape should be equal"
+
+        shape = [num_segments] + list(data.shape[1:])
+        result = torch.zeros(*shape)
+        if operation == 'sum':
+            result = torch_scatter.scatter_add(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'max':
+            result, _ = torch_scatter.scatter_max(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'mean':
+            result = torch_scatter.scatter_mean(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        elif operation == 'min':
+            result, _ = torch_scatter.scatter_min(data.float(), segment_ids, dim=0, dim_size=num_segments)
+        else:
+            raise Exception('Invalid operation type!')
+        result = result.type(data.dtype)
+        return result
 
     def _build_graph(self, inputs, is_training):
         """Builds input graph."""
@@ -114,29 +129,7 @@ class Model(nn.Module):
         cells = inputs['cells']
         decomposed_cells = common.triangles_to_edges(cells)
         senders, receivers = decomposed_cells['two_way_connectivity']
-        '''
-        Stochastic matrix and adjacency matrix
-        Reference: a simple and general graph neural network with stochastic message passing
-        '''
-        '''
-        if self.stochastic_message_passing_used and self.input_count % self.random_walk_generation_interval == 0:
-            start = torch.tensor(range(node_type.shape[0]), device=device)
-            self.sto_mat = random_walk(receivers, senders, start, walk_length=20)
 
-            adj_index = torch.stack((receivers, senders), dim=0)
-            adj_index = adj_index.tolist()
-            adj_mat = torch.sparse_coo_tensor(adj_index, [1] * receivers.shape[0],
-                                              (node_type.shape[0], node_type.shape[0]), device=device)
-            self_loop_mat = torch.diag(torch.tensor([1.0] * node_type.shape[0], device=device))
-            self_loop_adj_mat = self_loop_mat + adj_mat
-            adj_mat = torch.sparse.sum(adj_mat, dim=1)
-            adj_mat = torch.sqrt(adj_mat).to_dense()
-            square_root_degree_mat = torch.diag(adj_mat)
-            inversed_square_root_degree_mat = torch.inverse(square_root_degree_mat)
-            self.normalized_adj_mat = torch.matmul(inversed_square_root_degree_mat, self_loop_adj_mat)
-            self.normalized_adj_mat = torch.matmul(self.normalized_adj_mat, inversed_square_root_degree_mat)
-        self.input_count += 1
-        '''
         mesh_pos = inputs['mesh_pos']
         relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=senders) -
                               torch.index_select(input=world_pos, dim=0, index=receivers))
@@ -150,24 +143,37 @@ class Model(nn.Module):
 
         mesh_edges = self.core_model.EdgeSet(
             name='mesh_edges',
-            features=self._edge_normalizer(edge_features, is_training),
+            features=self._mesh_edge_normalizer(edge_features, is_training),
             receivers=receivers,
             senders=senders)
 
-        if self.core_model == encode_process_decode and self._ripple_used == True:
-            return self.core_model.MultiGraphWithPos(node_features=self._node_normalizer(node_features, is_training),
-                                                     edge_sets=[mesh_edges], target_feature=world_pos,
-                                                     mesh_pos=mesh_pos, model_type=self._model_type)
+        if self._ripple_used:
+            num_nodes = node_type.shape[0]
+            max_node_dynamic = self.unsorted_segment_operation(torch.norm(relative_world_pos, dim=-1), receivers,
+                                                               num_nodes,
+                                                               operation='max').to(device)
+            min_node_dynamic = self.unsorted_segment_operation(torch.norm(relative_world_pos, dim=-1), receivers,
+                                                               num_nodes,
+                                                               operation='min').to(device)
+            node_dynamic = self._node_dynamic_normalizer(max_node_dynamic - min_node_dynamic)
+
+            return (self.core_model.MultiGraphWithPos(node_features=node_features,
+                                                      edge_sets=[mesh_edges], target_feature=world_pos,
+                                                      model_type=self._model_type,
+                                                      node_dynamic=node_dynamic))
         else:
-            return self.core_model.MultiGraph(node_features=self._node_normalizer(node_features, is_training),
-                                              edge_sets=[mesh_edges])
+            return (self.core_model.MultiGraph(node_features=node_features,
+                                               edge_sets=[mesh_edges]))
 
     def forward(self, inputs, is_training):
         graph = self._build_graph(inputs, is_training=is_training)
         if is_training:
-            return self.learned_model(graph, self._edge_normalizer, is_training=is_training)
+            return self.learned_model(graph,
+                                      world_edge_normalizer=self._world_edge_normalizer, is_training=is_training)
         else:
-            return self._update(inputs, self.learned_model(graph, self._edge_normalizer, is_training=is_training))
+            return self._update(inputs, self.learned_model(graph,
+                                                           world_edge_normalizer=self._world_edge_normalizer,
+                                                           is_training=is_training))
 
     def _update(self, inputs, per_node_network_output):
         """Integrate model outputs."""
@@ -186,13 +192,15 @@ class Model(nn.Module):
     def save_model(self, path):
         torch.save(self.learned_model, path + "_learned_model.pth")
         torch.save(self._output_normalizer, path + "_output_normalizer.pth")
-        torch.save(self._edge_normalizer, path + "_edge_normalizer.pth")
+        torch.save(self._mesh_edge_normalizer, path + "_mesh_edge_normalizer.pth")
+        torch.save(self._world_edge_normalizer, path + "_world_edge_normalizer.pth")
         torch.save(self._node_normalizer, path + "_node_normalizer.pth")
 
     def load_model(self, path):
         self.learned_model = torch.load(path + "_learned_model.pth")
         self._output_normalizer = torch.load(path + "_output_normalizer.pth")
-        self._edge_normalizer = torch.load(path + "_edge_normalizer.pth")
+        self._mesh_edge_normalizer = torch.load(path + "_mesh_edge_normalizer.pth")
+        self._world_edge_normalizer = torch.load(path + "_world_edge_normalizer.pth")
         self._node_normalizer = torch.load(path + "_node_normalizer.pth")
 
     def evaluate(self):
