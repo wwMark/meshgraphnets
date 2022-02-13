@@ -58,24 +58,24 @@ device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'deform'],
+flags.DEFINE_enum('model', 'deform', ['cfd', 'cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 5, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 10, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
                   ['encode_process_decode'],
                   'Core model to be used')
 flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 7, 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 15, 'No. of training epochs')
 flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
@@ -115,7 +115,7 @@ flags.DEFINE_integer('ripple_node_ncross', 3,
 # directory setting
 flags.DEFINE_string('model_last_run_dir',
                     None,
-                    # os.path.join('E:\\meshgraphnets\\output\\deforming_plate\\Wed-Feb--9-22-05-15-2022'),
+                    # os.path.join('E:\\meshgraphnets\\output\\deforming_plate', 'Sat-Feb-12-12-14-04-2022'),
                     # os.path.join('/home/i53/student/ruoheng_ma/meshgraphnets/output/deforming_plate', 'Mon-Jan--3-15-18-53-2022'),
                     'Path to the checkpoint file of a network that should continue training')
 
@@ -381,25 +381,25 @@ def learner(model, params, run_step_config):
             root_logger.info("        " + str(trajectory_loss))
             model.save_model(
                 os.path.join(run_step_config['checkpoint_dir'],
-                             "trajectory_model_checkpoint" + "_" + str((trajectory_index + 1) % 2)))
+                             "trajectory_model_checkpoint"))
             torch.save(optimizer.state_dict(),
                        os.path.join(run_step_config['checkpoint_dir'],
-                                    "trajectory_optimizer_checkpoint" + "_" + str(epoch % 2) + ".pth"))
+                                    "trajectory_optimizer_checkpoint" + ".pth"))
             torch.save(scheduler.state_dict(),
                        os.path.join(run_step_config['checkpoint_dir'],
-                                    "trajectory_scheduler_checkpoint" + "_" + str(epoch % 2) + ".pth"))
+                                    "trajectory_scheduler_checkpoint" + ".pth"))
         epoch_training_losses.append(epoch_training_loss)
         root_logger.info("Current mean of epoch training losses")
         root_logger.info(torch.mean(torch.stack(epoch_training_losses)))
         model.save_model(
             os.path.join(run_step_config['checkpoint_dir'],
-                         "epoch_model_checkpoint" + "_" + str((trajectory_index + 1) % 2)))
+                         "epoch_model_checkpoint"))
         torch.save(optimizer.state_dict(),
                    os.path.join(run_step_config['checkpoint_dir'],
-                                "epoch_optimizer_checkpoint" + "_" + str(epoch % 2) + ".pth"))
+                                "epoch_optimizer_checkpoint" + ".pth"))
         torch.save(scheduler.state_dict(),
                    os.path.join(run_step_config['checkpoint_dir'],
-                                "epoch_scheduler_checkpoint" + "_" + str(epoch % 2) + ".pth"))
+                                "epoch_scheduler_checkpoint" + ".pth"))
         if epoch == 20:
             scheduler.step()
             root_logger.info("Call scheduler in epoch " + str(epoch))

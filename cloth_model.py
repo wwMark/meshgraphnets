@@ -195,6 +195,7 @@ class Model(nn.Module):
         torch.save(self._mesh_edge_normalizer, path + "_mesh_edge_normalizer.pth")
         torch.save(self._world_edge_normalizer, path + "_world_edge_normalizer.pth")
         torch.save(self._node_normalizer, path + "_node_normalizer.pth")
+        torch.save(self._node_dynamic_normalizer, path + "_node_dynamic_normalizer.pth")
 
     def load_model(self, path):
         self.learned_model = torch.load(path + "_learned_model.pth")
@@ -202,6 +203,7 @@ class Model(nn.Module):
         self._mesh_edge_normalizer = torch.load(path + "_mesh_edge_normalizer.pth")
         self._world_edge_normalizer = torch.load(path + "_world_edge_normalizer.pth")
         self._node_normalizer = torch.load(path + "_node_normalizer.pth")
+        self._node_dynamic_normalizer = torch.load(path + "_node_dynamic_normalizer.pth")
 
     def evaluate(self):
         self.eval()
