@@ -29,7 +29,7 @@ rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 def main(unused_argv):
     path_prefix = 'E:\\meshgraphnets\\output\\deforming_plate\\'
     path_suffix = 'rollout\\rollout.pkl'
-    rollout_paths = ['Fri-Feb-11-20-25-45-2022', 'Fri-Feb-11-20-28-47-2022']
+    rollout_paths = ['Mon-Feb-14-16-07-48-2022']
     # path_prefix = '/home/kit/anthropomatik/sn2444/meshgraphnets/output/deforming_plate/'
     # rollout_paths = ['Mon-Jan-31-05-04-38-2022/2', 'Mon-Jan-31-05-10-30-2022/2', 'Mon-Jan-31-05-20-38-2022/2', 'Mon-Jan-31-05-35-42-2022/2', 'Mon-Jan-31-05-39-05-2022/2', 'Mon-Jan-31-08-28-21-2022/2']
     for rollout_path in rollout_paths:
@@ -62,9 +62,9 @@ def main(unused_argv):
 
         def animate(num):
             # step = (num * skip) % num_steps
-            traj = 0
+            # traj = 0
             skip = 15
-            # traj = (num * skip) // num_steps
+            traj = (num * skip) // num_steps
             step = (num * skip) % num_steps
             ax_origin.cla()
             ax_pred.cla()
@@ -91,10 +91,10 @@ def main(unused_argv):
             ax_pred.set_title('PRED Trajectory %d Step %d' % (traj, step))
             return fig,
 
-        anima = animation.FuncAnimation(fig, animate, frames=math.floor(num_frames * 0.1), interval=100)
-        writervideo = animation.FFMpegWriter(fps=30)
-        anima.save(os.path.join(save_path, 'ani.mp4'), writer=writervideo)
-        # plt.show(block=True)
+        anima = animation.FuncAnimation(fig, animate, frames=math.floor(num_frames * 10), interval=100)
+        # writervideo = animation.FFMpegWriter(fps=30)
+        # anima.save(os.path.join(save_path, 'ani.mp4'), writer=writervideo)
+        plt.show(block=True)
 
 
 if __name__ == '__main__':

@@ -43,10 +43,7 @@ class Normalizer(nn.Module):
         """Normalizes input data and accumulates statistics."""
         if accumulate and self._num_accumulations < self._max_accumulations:
             # stop accumulating after a million updates, to prevent accuracy issues
-            if node_num:
-                self._accumulate(batched_data, node_num)
-            else:
-                self._accumulate(batched_data)
+            self._accumulate(batched_data)
         return (batched_data - self._mean()) / self._std_with_epsilon()
 
     def inverse(self, normalized_batch_data):
@@ -55,10 +52,7 @@ class Normalizer(nn.Module):
 
     def _accumulate(self, batched_data, node_num=None):
         """Function to perform the accumulation of the batch_data statistics."""
-        if node_num:
-            count = torch.tensor(batched_data.shape[0], dtype=torch.float32, device=device)
-        else:
-            count = torch.tensor(batched_data.shape[0], dtype=torch.float32, device=device)
+        count = torch.tensor(batched_data.shape[0], dtype=torch.float32, device=device)
 
         data_sum = torch.sum(batched_data, dim=0)
         squared_data_sum = torch.sum(batched_data ** 2, dim=0)
@@ -66,24 +60,6 @@ class Normalizer(nn.Module):
         self._acc_sum_squared = self._acc_sum_squared.add(squared_data_sum)
         self._acc_count = self._acc_count.add(count)
         self._num_accumulations = self._num_accumulations.add(1.)
-        if self._name == 'output_normalizer':
-            '''
-            print(batched_data[0])
-            temp = batched_data**2
-            print(temp[0])
-            quit()
-            '''
-            # print("            batched_data.shape")
-            # print("           ", batched_data.shape)
-            '''
-            print("            count", count)
-            print("            data_sum", data_sum)
-            print("             squared_data_sum", squared_data_sum)
-            print("            self._num_accumulations", self._num_accumulations)
-            print("             self._acc_count", self._acc_count)
-            print("              self._acc_sum", self._acc_sum)
-            print("               self._acc_sum_squared", self._acc_sum_squared)
-            '''
 
     def _mean(self):
         safe_count = torch.maximum(self._acc_count, torch.tensor([1.], device=device))
@@ -91,16 +67,6 @@ class Normalizer(nn.Module):
 
     def _std_with_epsilon(self):
         safe_count = torch.maximum(self._acc_count, torch.tensor([1.], device=device))
-        '''
-        if self._name == "node_normalizer":
-            print("--------------------------------------------")
-            print("mean", self._mean())
-            print("mean square", self._mean() ** 2)
-            print("divide", self._acc_sum_squared / safe_count)
-            print("std", torch.sqrt(self._acc_sum_squared / safe_count - self._mean() ** 2))
-            print("--------------------------------------------")
-        '''
-
         std = torch.sqrt(self._acc_sum_squared / safe_count - self._mean() ** 2)
         return torch.maximum(std, self._std_epsilon)
 

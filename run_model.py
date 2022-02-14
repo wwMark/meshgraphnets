@@ -67,15 +67,15 @@ flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
 flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
 flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 100, 'No. of rollout trajectories')
+flags.DEFINE_integer('trajectories', 10, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
                   ['encode_process_decode'],
                   'Core model to be used')
 flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 15, 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 7, 'No. of training epochs')
 flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
@@ -461,21 +461,36 @@ def loss_fn(loss_type, inputs, network_output, model, params):
         cur_position = world_pos
         target_position = target_world_pos
         target_velocity = target_position - cur_position
+
+        node_type = inputs['node_type']
+        '''scripted_node_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device))
+        scripted_node_mask = torch.logical_not(scripted_node_mask)
+        scripted_node_mask = torch.stack([scripted_node_mask] * 3, dim=1)
+        target_velocity = torch.where(scripted_node_mask, torch.tensor(0., device=device), target_velocity)'''
+
         world_pos_normalizer, stress_normalizer = model.get_output_normalizer()
         target_normalized = world_pos_normalizer(target_velocity).to(device)
         target_normalized_stress = stress_normalizer(target_stress).to(device)
 
+        '''node_type = inputs['node_type']
+        scripted_node_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device))
+        scripted_node_mask = torch.stack([scripted_node_mask] * 3, dim=1)
+        target_normalized = torch.where(scripted_node_mask, torch.tensor(0., device=device), target_normalized)'''
+
         # build loss
         # print(network_output[187])
         node_type = inputs['node_type']
-        # loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.HANDLE.value], device=device).int())
-        # loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device).int())
+        loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
         # loss_mask = torch.logical_not(loss_mask)
-        # error = torch.sum((target_normalized - network_output) ** 2, dim=1)
-        # loss = torch.mean(error[loss_mask])
+        # loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device).int())
+        # loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
+        # loss_mask = torch.logical_not(loss_mask)
+        error = torch.sum((target_normalized - network_output) ** 2, dim=1)
+        loss = torch.mean(error[loss_mask])
 
-        error = torch.sum((target_normalized - network_output) ** 2, dim=1) + torch.sum((target_normalized_stress - network_output) ** 2, dim=1)
-        loss = torch.mean(error)
+        # error = torch.sum((target_normalized - network_output) ** 2, dim=1)
+        # error += torch.sum((target_normalized_stress - network_output) ** 2, dim=1)
+        # loss = torch.mean(error)
         return loss
 
 def evaluator(params, model, run_step_config):

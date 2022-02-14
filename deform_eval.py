@@ -22,8 +22,8 @@ def _rollout(model, initial_state, num_steps, target_world_pos):
         with torch.no_grad():
             prediction, cur_position, cur_velocity, stress = model({**initial_state, 'world_pos': cur_pos, 'target|world_pos': target_world_pos}, is_training=False)
 
-        # next_pos = torch.where(mask, torch.squeeze(prediction), torch.squeeze(cur_pos))
-        next_pos = prediction
+        next_pos = torch.where(mask, prediction, target_world_pos)
+        # next_pos = prediction
         # next_pos = torch.where(obstacle_mask, torch.squeeze(target_world_pos), next_pos)
 
         trajectory.append(next_pos)

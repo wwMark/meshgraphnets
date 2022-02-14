@@ -25,7 +25,7 @@ class Model(nn.Module):
         self._params = params
         self._output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
         self._stress_output_normalizer = normalization.Normalizer(size=3, name='stress_output_normalizer')
-        self._node_normalizer = normalization.Normalizer(size=3, name='node_normalizer')
+        self._node_normalizer = normalization.Normalizer(size=9, name='node_normalizer')
         self._node_dynamic_normalizer = normalization.Normalizer(size=1, name='node_dynamic_normalizer')
         self._mesh_edge_normalizer = normalization.Normalizer(size=8, name='mesh_edge_normalizer')
         self._world_edge_normalizer = normalization.Normalizer(size=4, name='world_edge_normalizer')
@@ -104,7 +104,6 @@ class Model(nn.Module):
     def _build_graph(self, inputs, is_training):
         """Builds input graph."""
         world_pos = inputs['world_pos']
-        target_world_pos = inputs['target|world_pos']
 
         node_type = inputs['node_type']
 
@@ -119,7 +118,7 @@ class Model(nn.Module):
                              torch.index_select(mesh_pos, 0, receivers))
 
         # find world edge
-        radius = 0.006
+        radius = 0.03
         world_distance_matrix = torch.cdist(world_pos, world_pos, p=2)
         world_connection_matrix = torch.where(world_distance_matrix < radius, 1., 0.)
         # remove self connection
@@ -131,10 +130,16 @@ class Model(nn.Module):
         no_connection_mask = torch.logical_or(no_connection_mask, torch.eq(node_type[:, 0], torch.tensor([common.NodeType.HANDLE.value], device=device)))
         no_connection_mask = torch.transpose(torch.stack([no_connection_mask] * world_pos.shape[0], dim=1), 0, 1)
         world_connection_matrix = torch.where(no_connection_mask, torch.tensor(0., dtype=torch.float32, device=device), world_connection_matrix)
+        # remove senders whose type is normal or handle
+        '''no_connection_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device))
+        no_connection_mask = torch.logical_or(no_connection_mask, torch.eq(node_type[:, 0], torch.tensor([common.NodeType.HANDLE.value], device=device)))
+        no_connection_mask = torch.stack([no_connection_mask] * world_pos.shape[0], dim=1)
+        world_connection_matrix = torch.where(no_connection_mask, torch.tensor(0., dtype=torch.float32, device=device),
+                                              world_connection_matrix)'''
 
         world_senders, world_receivers = torch.nonzero(world_connection_matrix, as_tuple=True)
-        relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=world_senders) -
-                              torch.index_select(input=world_pos, dim=0, index=world_receivers))
+        relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=world_receivers) -
+                              torch.index_select(input=world_pos, dim=0, index=world_senders))
 
         world_edge_features = torch.cat((
             relative_world_pos,
@@ -143,6 +148,7 @@ class Model(nn.Module):
         world_edges = self.core_model.EdgeSet(
             name='world_edges',
             features=self._world_edge_normalizer(world_edge_features, None, is_training),
+            # features=world_edge_features,
             receivers=world_receivers,
             senders=world_senders)
 
@@ -157,19 +163,22 @@ class Model(nn.Module):
         mesh_edges = self.core_model.EdgeSet(
             name='mesh_edges',
             features=self._mesh_edge_normalizer(mesh_edge_features, None, is_training),
+            # features=mesh_edge_features,
             receivers=receivers,
             senders=senders)
 
-        obstacle_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device))
+        '''obstacle_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device))
         obstacle_mask = torch.stack([obstacle_mask] * 3, dim=1)
         masked_target_world_pos = torch.where(obstacle_mask, target_world_pos, torch.tensor(0., dtype=torch.float32, device=device))
         masked_world_pos = torch.where(obstacle_mask, world_pos, torch.tensor(0., dtype=torch.float32, device=device))
-        kinematic_nodes_features = self._node_normalizer(masked_target_world_pos - masked_world_pos)
+        # kinematic_nodes_features = self._node_normalizer(masked_target_world_pos - masked_world_pos)
+        kinematic_nodes_features = masked_target_world_pos - masked_world_pos
         normal_node_features = torch.cat((torch.zeros_like(world_pos), one_hot_node_type), dim=-1)
         kinematic_node_features = torch.cat((kinematic_nodes_features, one_hot_node_type), dim=-1)
         obstacle_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device))
         obstacle_mask = torch.stack([obstacle_mask] * 12, dim=1)
-        node_features = torch.where(obstacle_mask, kinematic_node_features, normal_node_features)
+        node_features = torch.where(obstacle_mask, kinematic_node_features, normal_node_features)'''
+        node_features = one_hot_node_type
 
         if self._ripple_used:
             num_nodes = node_type.shape[0]
@@ -196,13 +205,20 @@ class Model(nn.Module):
 
     def _update(self, inputs, per_node_network_output):
         """Integrate model outputs."""
+        '''output_mask = torch.eq(inputs['node_type'][:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device))
+        output_mask = torch.stack([output_mask] * inputs['world_pos'].shape[-1], dim=1)
+        velocity = self._output_normalizer.inverse(torch.where(output_mask, per_node_network_output, torch.tensor(0., device=device)))'''
         velocity = self._output_normalizer.inverse(per_node_network_output)
         stress = self._stress_output_normalizer.inverse(per_node_network_output)
 
+        node_type = inputs['node_type']
+        '''scripted_node_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OBSTACLE.value], device=device))
+        scripted_node_mask = torch.stack([scripted_node_mask] * 3, dim=1)'''
 
         # integrate forward
         cur_position = inputs['world_pos']
         position = cur_position + velocity
+        # position = torch.where(scripted_node_mask, position + inputs['target|world_pos'] - inputs['world_pos'], position)
         return (position, cur_position, velocity, stress)
 
     def get_output_normalizer(self):
