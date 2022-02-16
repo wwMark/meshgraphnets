@@ -43,9 +43,9 @@ class Model(nn.Module):
         self._output_normalizer = normalization.Normalizer(size=3, name='output_normalizer')
         self._node_normalizer = normalization.Normalizer(
             size=3 + common.NodeType.SIZE, name='node_normalizer')
-        self._node_dynamic_normalizer = normalization.Normalizer(size=1, name='node_normalizer')
+        self._node_dynamic_normalizer = normalization.Normalizer(size=1, name='node_dynamic_normalizer')
         self._mesh_edge_normalizer = normalization.Normalizer(
-            size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
+            size=7, name='mesh_edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
         self._world_edge_normalizer = normalization.Normalizer(size=4, name='world_edge_normalizer')
         self._model_type = params['model'].__name__
 
@@ -162,7 +162,7 @@ class Model(nn.Module):
                                                       model_type=self._model_type,
                                                       node_dynamic=node_dynamic))
         else:
-            return (self.core_model.MultiGraph(node_features=node_features,
+            return (self.core_model.MultiGraph(node_features=self._node_normalizer(node_features),
                                                edge_sets=[mesh_edges]))
 
     def forward(self, inputs, is_training):

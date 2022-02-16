@@ -118,7 +118,7 @@ class Model(nn.Module):
                              torch.index_select(mesh_pos, 0, receivers))
 
         # find world edge
-        radius = 0.03
+        radius = 0.01
         world_distance_matrix = torch.cdist(world_pos, world_pos, p=2)
         world_connection_matrix = torch.where(world_distance_matrix < radius, 1., 0.)
         # remove self connection
@@ -138,8 +138,8 @@ class Model(nn.Module):
                                               world_connection_matrix)'''
 
         world_senders, world_receivers = torch.nonzero(world_connection_matrix, as_tuple=True)
-        relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=world_receivers) -
-                              torch.index_select(input=world_pos, dim=0, index=world_senders))
+        relative_world_pos = (torch.index_select(input=world_pos, dim=0, index=world_senders) -
+                              torch.index_select(input=world_pos, dim=0, index=world_receivers))
 
         world_edge_features = torch.cat((
             relative_world_pos,

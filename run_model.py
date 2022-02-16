@@ -58,24 +58,24 @@ device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'deform', ['cfd', 'cloth', 'deform'],
+flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 10, 'No. of training trajectories')
+flags.DEFINE_integer('epochs', 10, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
 flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
                   ['encode_process_decode'],
                   'Core model to be used')
-flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 7, 'No. of training epochs')
+flags.DEFINE_enum('message_passing_aggregator', 'min', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 2, 'No. of training epochs')
 flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
@@ -130,10 +130,10 @@ PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
                 size=2, batch=2, model=cfd_model, evaluator=cfd_eval, loss_type='cfd',
                 stochastic_message_passing_used='False'),
-    'cloth': dict(noise=0.001, gamma=0.1, field='world_pos', history=True,
+    'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
                   size=3, batch=1, model=cloth_model, evaluator=cloth_eval, loss_type='cloth',
                   stochastic_message_passing_used='False'),
-    'deform': dict(noise=0.003, gamma=0.1, field='world_pos', history=False,
+    'deform': dict(noise=0.003, gamma=1.0, field='world_pos', history=False,
                   size=3, batch=2, model=deform_model, evaluator=deform_eval, loss_type='deform',
                   stochastic_message_passing_used='False')
 }
@@ -196,7 +196,6 @@ def split_and_preprocess(params, model_type):
     noise_field = params['field']
     noise_scale = params['noise']
     noise_gamma = params['gamma']
-    loss_type = params['loss_type']
 
     def add_noise(frame):
         zero_size = torch.zeros(frame[noise_field].size(), dtype=torch.float32).to(device)
@@ -209,8 +208,7 @@ def split_and_preprocess(params, model_type):
         mask = torch.stack(mask_sequence, dim=1)
         noise = torch.where(mask, noise, torch.zeros_like(noise))
         frame[noise_field] += noise
-        if loss_type == 'cloth':
-            frame['target|' + noise_field] += (1.0 - noise_gamma) * noise
+        frame['target|' + noise_field] += (1.0 - noise_gamma) * noise
         return frame
 
     def element_operation(trajectory):
