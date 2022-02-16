@@ -1,0 +1,7 @@
+#!/bin/bash
+
+python run_model.py --model=cloth --mode=all --rollout_split=valid --dataset=flag_simple --epochs=15 --trajectories=100 --num_rollouts=100 --core_model=encode_process_decode --message_passing_aggregator=sum --message_passing_steps=5 --attention=False --ripple_used=False --use_prev_config=True
+python run_model.py --model=cloth --mode=all --rollout_split=valid --dataset=flag_simple --epochs=15 --trajectories=100 --num_rollouts=100 --core_model=encode_process_decode --message_passing_aggregator=min --message_passing_steps=5 --attention=False --ripple_used=False --use_prev_config=True
+python run_model.py --model=cloth --mode=all --rollout_split=valid --dataset=flag_simple --epochs=15 --trajectories=100 --num_rollouts=100 --core_model=encode_process_decode --message_passing_aggregator=max --message_passing_steps=5 --attention=False --ripple_used=False --use_prev_config=True
+python run_model.py --model=cloth --mode=all --rollout_split=valid --dataset=flag_simple --epochs=15 --trajectories=100 --num_rollouts=100 --core_model=encode_process_decode --message_passing_aggregator=mean --message_passing_steps=5 --attention=False --ripple_used=False --use_prev_config=True
+python run_model.py --model=cloth --mode=all --rollout_split=valid --dataset=flag_simple --epochs=15 --trajectories=100 --num_rollouts=100 --core_model=encode_process_decode --message_passing_aggregator=pna --message_passing_steps=5 --attention=False --ripple_used=False --use_prev_config=True

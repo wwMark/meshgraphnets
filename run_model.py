@@ -58,15 +58,15 @@ device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'cloth', ['cfd', 'cloth', 'deform'],
+flags.DEFINE_enum('model', 'cloth', ['cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'cylinder_flow', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 10, 'No. of training epochs')
+flags.DEFINE_integer('epochs', 15, 'No. of training epochs')
 flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
 flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 
@@ -74,9 +74,9 @@ flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 flags.DEFINE_enum('core_model', 'encode_process_decode',
                   ['encode_process_decode'],
                   'Core model to be used')
-flags.DEFINE_enum('message_passing_aggregator', 'min', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
-flags.DEFINE_integer('message_passing_steps', 2, 'No. of training epochs')
-flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
+flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
+flags.DEFINE_integer('message_passing_steps', 5, 'No. of training epochs')
+flags.DEFINE_boolean('attention', True, 'whether attention is used or not')
 
 # ripple method configuration
 '''
@@ -97,8 +97,8 @@ ripple_node_connection defines how the selected nodes of each ripple connect wit
     fully_connected: all the selected nodes are connected with each other
     fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
 '''
-flags.DEFINE_boolean('ripple_used', False, 'whether ripple is used or not')
-flags.DEFINE_enum('ripple_generation', 'equal_size', ['equal_size', 'gradient', 'exponential_size', 'random_nodes', 'distance_density'],
+flags.DEFINE_boolean('ripple_used', True, 'whether ripple is used or not')
+flags.DEFINE_enum('ripple_generation', 'distance_density', ['equal_size', 'gradient', 'exponential_size', 'random_nodes', 'distance_density'],
                   'defines how ripples are generated')
 flags.DEFINE_integer('ripple_generation_number', 5,
                      'defines how many ripples should be generated in equal size and gradient ripple generation; or the base in exponential size generation')
@@ -123,7 +123,7 @@ flags.DEFINE_string('model_last_run_dir',
 flags.DEFINE_boolean('use_prev_config', True, 'Decide whether to use the configuration from last run step')
 
 # hpc max run time setting
-flags.DEFINE_integer('hpc_default_max_time', 172800 - 3600 * 4, 'Max run time on hpc')
+flags.DEFINE_integer('hpc_default_max_time', 20 * 24 * 3600, 'Max run time on hpc')
 # flags.DEFINE_integer('hpc_default_max_time', 1500, 'Max run time on hpc')
 
 PARAMETERS = {
@@ -173,8 +173,6 @@ def add_targets(params):
             for key, val in trajectory.items():
                 out[key] = val[0:-1]
                 if key in fields:
-                    if add_history:
-                        out['prev|' + key] = val[0:-2]
                     out['target|' + key] = val[1:]
                 if key == 'stress':
                     out['target|stress'] = val[1:]
@@ -398,7 +396,7 @@ def learner(model, params, run_step_config):
         torch.save(scheduler.state_dict(),
                    os.path.join(run_step_config['checkpoint_dir'],
                                 "epoch_scheduler_checkpoint" + ".pth"))
-        if epoch == 20:
+        if epoch == 13:
             scheduler.step()
             root_logger.info("Call scheduler in epoch " + str(epoch))
         torch.save({'epoch': epoch}, os.path.join(run_step_config['checkpoint_dir'], "epoch_checkpoint.pth"))
@@ -434,20 +432,6 @@ def loss_fn(loss_type, inputs, network_output, model, params):
         # build loss
         node_type = inputs['node_type']
         loss_mask = torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device).int())
-        error = torch.sum((target_normalized - network_output) ** 2, dim=1)
-        loss = torch.mean(error[loss_mask])
-        return loss
-    elif loss_type == 'cfd':
-        cur_velocity = inputs['velocity']
-        target_velocity = inputs['target|velocity']
-        target_velocity_change = target_velocity - cur_velocity
-        target_normalized = model.get_output_normalizer()(target_velocity_change).to(device)
-
-        # build loss
-        node_type = inputs['node_type']
-        loss_mask = torch.logical_or(
-            torch.eq(node_type[:, 0], torch.tensor([common.NodeType.NORMAL.value], device=device)),
-            torch.eq(node_type[:, 0], torch.tensor([common.NodeType.OUTFLOW.value], device=device)))
         error = torch.sum((target_normalized - network_output) ** 2, dim=1)
         loss = torch.mean(error[loss_mask])
         return loss
@@ -511,9 +495,6 @@ def evaluator(params, model, run_step_config):
         if model_type == 'cloth':
             mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
             l1_loss = l1_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
-        elif model_type == 'cfd':
-            mse_loss = mse_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
-            l1_loss = l1_loss_fn(torch.squeeze(trajectory['velocity'], dim=0), prediction_trajectory['pred_velocity'])
         elif model_type == 'deform':
             mse_loss = mse_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
             l1_loss = l1_loss_fn(torch.squeeze(trajectory['world_pos'], dim=0), prediction_trajectory['pred_pos'])
@@ -707,8 +688,8 @@ def main(argv):
 
     # setup directory structure for saving checkpoint, train configuration, rollout result and log
     root_dir = pathlib.Path(__file__).parent.resolve()
-    # dataset_dir = os.path.join('/home/temp_store/ruoheng_ma', 'data', dataset_name)
-    dataset_dir = os.path.join('data', dataset_name)
+    dataset_dir = os.path.join('/home/temp_store/ruoheng_ma', 'data', dataset_name)
+    # dataset_dir = os.path.join('data', dataset_name)
     output_dir = os.path.join(root_dir, 'output', dataset_name)
     run_step_dir = prepare_files_and_directories(last_run_dir, output_dir)
     checkpoint_dir = os.path.join(run_step_dir, 'checkpoint')
