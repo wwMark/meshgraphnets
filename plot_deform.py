@@ -29,7 +29,7 @@ rollout_path = os.path.join(latest_subdir, 'rollout', 'rollout.pkl')
 def main(unused_argv):
     path_prefix = 'E:\\meshgraphnets\\output\\deforming_plate\\'
     path_suffix = 'rollout\\rollout.pkl'
-    rollout_paths = ['Mon-Feb-14-17-20-44-2022']
+    rollout_paths = ['Sat-Feb-19-15-44-13-2022']
     # path_prefix = '/home/kit/anthropomatik/sn2444/meshgraphnets/output/deforming_plate/'
     # rollout_paths = ['Mon-Jan-31-05-04-38-2022/2', 'Mon-Jan-31-05-10-30-2022/2', 'Mon-Jan-31-05-20-38-2022/2', 'Mon-Jan-31-05-35-42-2022/2', 'Mon-Jan-31-05-39-05-2022/2', 'Mon-Jan-31-08-28-21-2022/2']
     for rollout_path in rollout_paths:
@@ -62,8 +62,8 @@ def main(unused_argv):
 
         def animate(num):
             # step = (num * skip) % num_steps
-            # traj = 0
-            skip = 15
+            # traj = 2
+            skip = 10
             traj = (num * skip) // num_steps
             step = (num * skip) % num_steps
             ax_origin.cla()

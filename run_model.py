@@ -58,17 +58,17 @@ device = torch.device('cuda')
 
 # train and evaluation configuration
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('model', 'cloth', ['cloth', 'deform'],
+flags.DEFINE_enum('model', 'deform', ['cloth', 'deform'],
                   'Select model to run.')
 flags.DEFINE_enum('mode', 'all', ['train', 'eval', 'all'],
                   'Train model, or run evaluation, or run both.')
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
-flags.DEFINE_string('dataset', 'flag_simple', ['flag_simple', 'deforming_plate'])
+flags.DEFINE_string('dataset', 'deforming_plate', ['flag_simple', 'deforming_plate'])
 
-flags.DEFINE_integer('epochs', 15, 'No. of training epochs')
-flags.DEFINE_integer('trajectories', 100, 'No. of training trajectories')
-flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
+flags.DEFINE_integer('epochs', 2, 'No. of training epochs')
+flags.DEFINE_integer('trajectories', 2, 'No. of training trajectories')
+flags.DEFINE_integer('num_rollouts', 1, 'No. of rollout trajectories')
 
 # core model configuration
 flags.DEFINE_enum('core_model', 'encode_process_decode',
@@ -76,7 +76,7 @@ flags.DEFINE_enum('core_model', 'encode_process_decode',
                   'Core model to be used')
 flags.DEFINE_enum('message_passing_aggregator', 'sum', ['sum', 'max', 'min', 'mean', 'pna'], 'No. of training epochs')
 flags.DEFINE_integer('message_passing_steps', 5, 'No. of training epochs')
-flags.DEFINE_boolean('attention', True, 'whether attention is used or not')
+flags.DEFINE_boolean('attention', False, 'whether attention is used or not')
 
 # ripple method configuration
 '''
@@ -97,7 +97,7 @@ ripple_node_connection defines how the selected nodes of each ripple connect wit
     fully_connected: all the selected nodes are connected with each other
     fully_ncross_connected: a specific number of nodes of the same ripple are connected with each other, and n randomly selected nodes from them will connect with n randomly selected nodes from another ripple
 '''
-flags.DEFINE_boolean('ripple_used', True, 'whether ripple is used or not')
+flags.DEFINE_boolean('ripple_used', False, 'whether ripple is used or not')
 flags.DEFINE_enum('ripple_generation', 'distance_density', ['equal_size', 'gradient', 'exponential_size', 'random_nodes', 'distance_density'],
                   'defines how ripples are generated')
 flags.DEFINE_integer('ripple_generation_number', 5,
@@ -123,7 +123,7 @@ flags.DEFINE_string('model_last_run_dir',
 flags.DEFINE_boolean('use_prev_config', True, 'Decide whether to use the configuration from last run step')
 
 # hpc max run time setting
-flags.DEFINE_integer('hpc_default_max_time', 20 * 24 * 3600, 'Max run time on hpc')
+flags.DEFINE_integer('hpc_default_max_time', (48 - 4) * 60 * 60, 'Max run time on hpc')
 # flags.DEFINE_integer('hpc_default_max_time', 1500, 'Max run time on hpc')
 
 PARAMETERS = {
@@ -688,8 +688,8 @@ def main(argv):
 
     # setup directory structure for saving checkpoint, train configuration, rollout result and log
     root_dir = pathlib.Path(__file__).parent.resolve()
-    dataset_dir = os.path.join('/home/temp_store/ruoheng_ma', 'data', dataset_name)
-    # dataset_dir = os.path.join('data', dataset_name)
+    # dataset_dir = os.path.join('/home/temp_store/ruoheng_ma', 'data', dataset_name)
+    dataset_dir = os.path.join('data', dataset_name)
     output_dir = os.path.join(root_dir, 'output', dataset_name)
     run_step_dir = prepare_files_and_directories(last_run_dir, output_dir)
     checkpoint_dir = os.path.join(run_step_dir, 'checkpoint')
@@ -803,7 +803,7 @@ def main(argv):
         model.evaluate()
         model.to(device)
         eval_loss_record = evaluator(params, model, run_step_config)
-        step_loss = n_step_evaluator(params, model, run_step_config, n_step_list=[1], n_traj=1)
+        step_loss = n_step_evaluator(params, model, run_step_config, n_step_list=[1, 3, 5, 7, 10], n_traj=1)
         if last_run_dir is not None and train_loss_record is None:
             train_loss_record = pickle_load(os.path.join(last_run_step_dir, 'log', 'train_loss.pkl'))
         root_logger.info("Finished evaluating......")
