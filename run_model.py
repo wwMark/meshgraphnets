@@ -251,7 +251,8 @@ def process_trajectory(trajectory_data, params, model_type, dataset_dir, add_tar
     trajectory = {}
     # decode bytes into corresponding dtypes
     for key, value in trajectory_data.items():
-        raw_data = value.numpy().tobytes()
+        # raw_data = value.numpy().tobytes()
+        raw_data = value[0][0]
         mature_data = np.frombuffer(raw_data, dtype=getattr(np, dtypes[key]))
         mature_data = torch.from_numpy(mature_data).to(device)
         reshaped_data = torch.reshape(mature_data, shapes[key])
